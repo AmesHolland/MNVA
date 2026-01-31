@@ -30,3 +30,29 @@ class TimeEvolutionAgent(BaseAgent):
             "messages": [AIMessage(content="[stub] TimeEvolutionAgent done")],
             "tool_trace": [{"agent": self.name, "status": "stub"}],
         }
+
+# ===================== 最简单的测试逻辑 =====================
+def test_time_evolution_agent():
+    """测试 TimeEvolutionAgent 的 invoke 方法"""
+    # 1. 构造测试用的 state（模拟真实的 OceanState 数据）
+    test_state = OceanState({
+        "news_list": [{"id": "1"}, {"id": "2"}, {"id": "3"}],  # 模拟新闻元数据列表
+        "constraints": {"topic": "deep sea mining"}  # 可选，适配你注释的代码
+    })
+
+    # 2. 实例化 agent
+    agent = TimeEvolutionAgent()
+
+    # 3. 调用 invoke 方法并捕获结果
+    try:
+        result = agent.invoke(test_state)
+        print("✅ Agent 调用成功！输出结果：")
+        # 格式化打印结果，方便查看
+        import json
+        print(json.dumps(result, indent=2, default=str))  # default=str 处理 AIMessage 序列化
+    except Exception as e:
+        print(f"❌ Agent 调用失败！错误信息：{str(e)}")
+
+# 执行测试
+if __name__ == "__main__":
+    test_time_evolution_agent()
