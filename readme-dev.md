@@ -220,8 +220,7 @@ LLM 不会写在“图结构”里，而是在**节点/Agent 内部**调用：
 * `draft_answer`：LLM 基于 `findings + evidence_index + news_list(meta)` 生成可验证回答
 * 子 Agent 内部：LLM 抽取事件、聚类、总结、冲突检测、多模型交叉验证等
 
-> 工程建议：
-> **LLM 对象不要放进 state**（不可序列化），作为 Builder/Agent 的成员注入即可。
+> LLM可以直接调用 agent/config/llm_config.py llm
 
 ---
 
@@ -277,7 +276,7 @@ class TimeEvolutionAgent(BaseAgent):
 
 ---
 
-## 10. 团队开发规范（强建议写进 CONTRIBUTING）
+## 10. 团队开发规范
 
 ### 10.1 命名与稳定性
 
@@ -297,7 +296,7 @@ class TimeEvolutionAgent(BaseAgent):
 
 ---
 
-## 11. 最小“子 Agent 输出模板”（给同伴复制粘贴）
+## 11. 最小“子 Agent 输出模板”
 
 ```python
 return {
@@ -318,21 +317,3 @@ return {
   "errors": [...],
 }
 ```
-
----
-
-## 12. 你可以怎么扩展（后续路线）
-
-* 让 Planner 输出更稳定：用 LLM structured output（Pydantic schema）
-* 加入“自动验证/可信度”子 Agent：source agreement、conflict detection、multi-source cross-check
-* finalize 把 viz_buffer 落 Redis/DB，返回 viz_key 给前端拉取
-* 给 state 加裁剪策略：messages 超过 N 条自动摘要到 working_summary（后续需要）
-
----
-
-如果你希望这份手册更“团队可执行”，我可以再帮你补两样东西（都不涉及测试）：
-
-1. **State 字段字典（Data Dictionary）**：每个 key 的语义、类型、谁写、谁读、生命周期
-2. **子 Agent 任务输入规范（Task.inputs schema）**：例如 time_range 的格式、geo 的格式、entities/topics 的格式、默认值策略
-
-你把你准备最终定版的 `constraints` 与 `news_meta` 字段格式贴一下，我就能把这两份规范写到可以直接拿去做协作开发的程度。

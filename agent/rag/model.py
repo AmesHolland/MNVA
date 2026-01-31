@@ -1,5 +1,5 @@
 from langchain.chat_models import init_chat_model
-from agent.config.rag_config import SILICONFLOW_API_KEY, SILICONFLOW_BASE_URL, SILICONFLOW_EMBEDDING_URL, SILICONFLOW_CHAT_MODEL, SILICONFLOW_EMBEDDING_MODEL
+from agent.config.llm_config import SILICONFLOW_API_KEY, SILICONFLOW_BASE_URL, SILICONFLOW_EMBEDDING_URL, SILICONFLOW_CHAT_MODEL, SILICONFLOW_EMBEDDING_MODEL
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
 
@@ -41,7 +41,7 @@ def get_rerankings():
     )
 
 def get_chat_model(
-    temperature: float = 0.1,
+    temperature: float = 0.0,
     top_p: float = 0.9
 ):
     """
