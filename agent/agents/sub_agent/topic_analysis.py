@@ -24,7 +24,7 @@ class TopicAnalysisAgent(BaseAgent):
         # （热点如何界定？关键词词频？那就需要额外的关键词词频统计工具 同时将提取的关键词进行）
         # 2. 再使用LLM围绕这些新闻进行整理总结
         # 如果新闻列表太多怎么办？分批给大模型？
-        # 期望返回：hot_spot_list(列表)、同时整理出必要的关键词列表、tool_trace追加
+        # 结果以文本形式传到 messages 的 AIMessage里即可
         return {
             "messages": [AIMessage(content="[stub] TopicAnalysisAgent done")],
             "tool_trace": [{"agent": self.name, "status": "stub"}],

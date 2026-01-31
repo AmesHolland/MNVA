@@ -25,7 +25,7 @@ class TimeEvolutionAgent(BaseAgent):
         # 然后再让llm识别新闻中的 热点/实体
         # 整理出关于这个热点/实体 在时间演变下的变化趋势
 
-        # 期望返回：news_candidates(列表)、tool_trace追加、可能的viz_buffer追加
+        # 结果以文本形式传到 messages 的 AIMessage里即可
         return {
             "messages": [AIMessage(content="[stub] TimeEvolutionAgent done")],
             "tool_trace": [{"agent": self.name, "status": "stub"}],
