@@ -1,0 +1,4 @@
+./agent/tmp/
+.env
+.idea/
+./rag/data/
