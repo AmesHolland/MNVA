@@ -14,7 +14,7 @@ class TopicAnalysisAgent(BaseAgent):
 
     def invoke(self, state: OceanState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
 
-
+        time_span = "October" # "from October to December"
         news_meta_list = state["news_list"]
         news_list = get_news_by_id([news["id"] for news in news_meta_list])
         # TODO: 实现：某段时间内，新闻热点的整理：xx时间-xx时间 共有以下几个热点信息 xxxxxx

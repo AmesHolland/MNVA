@@ -15,6 +15,7 @@ class TimeEvolutionAgent(BaseAgent):
     def invoke(self, state: OceanState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
         # TODO: 实现：时序新闻整理总结 + 前端可视化 新闻列表 关于这个热点 共有哪些新闻，时间演化的趋势是怎么样的 涉及到了哪些国家
 
+        time_span = "from October to December"
         # topic = state["constraints"]["topic"]
         topic = "deep sea mining" # "深海采矿"
 
