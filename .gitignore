@@ -2,3 +2,5 @@
 .env
 .idea/
 ./rag/data/
+./venv/
+./requirements.txt
