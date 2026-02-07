@@ -1,19 +1,19 @@
-# @agents/rag/vector_store.py
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, Callable
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Callable
 from urllib.parse import urlparse
 
 import requests
 import weaviate
-from weaviate.auth import AuthApiKey
-from weaviate.classes.query import Filter
-
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_weaviate.vectorstores import WeaviateVectorStore
+from weaviate.auth import AuthApiKey
+from weaviate.classes.query import Filter
+from weaviate.collections.classes.config import VectorDistances
 
 from agent.config.rag_config import RAGConfig
 from agent.rag.model import get_embeddings
@@ -76,16 +76,16 @@ class WeaviateNewsVectorStore:
         self.index_name = (
             index_name
             or getattr(config, "weaviate_index_name", None)
-            or os.getenv("WEAVIATE_INDEX_NAME", "OceanNews")
+            or os.getenv("WEAVIATE_INDEX_NAME", "MarineNews")
         )
         self.text_key = text_key
 
-        # 对齐 processor.py 的 metadata（news_id/title/publish_time/source/url/chunk_idx/total_chunks）
+        # 对齐 processor.py 的 metadata（news_id/title/publish_date/source/url/chunk_idx/total_chunks）
         self.metadata_keys = metadata_keys or [
             "chunk_id",
             "news_id",
             "title",
-            "publish_time",
+            "publish_date",
             "source",
             "url",
             "chunk_idx",
@@ -156,39 +156,11 @@ class WeaviateNewsVectorStore:
             pass
 
     # -------------------------
-    # ID strategy (important)
-    # -------------------------
-    @staticmethod
-    def _make_chunk_id(doc: Document) -> str:
-        """
-        为每个切片生成稳定唯一 ID，便于去重/更新：
-        chunk_id = "{news_id}_c{chunk_idx:03d}"
-        """
-        md = doc.metadata or {}
-        news_id = str(md.get("news_id", "unknown"))
-        chunk_idx = int(md.get("chunk_idx", 0) or 0)
-        return f"{news_id}_c{chunk_idx:03d}"
-
-    def _prepare_docs(self, docs: Sequence[Document]) -> Tuple[List[Document], List[str]]:
-        """
-        确保每个 doc 都有 chunk_id，并生成 ids 列表（用于写入时指定对象 id）
-        """
-        prepared: List[Document] = []
-        ids: List[str] = []
-        for d in docs:
-            md = dict(d.metadata or {})
-            if "chunk_id" not in md or not md["chunk_id"]:
-                md["chunk_id"] = self._make_chunk_id(d)
-            prepared.append(Document(page_content=d.page_content, metadata=md))
-            ids.append(str(md["chunk_id"]))
-        return prepared, ids
-
-    # -------------------------
     # Store (ingest / upsert)
     # -------------------------
     def store_documents(
         self,
-        docs: Sequence[Document],
+        docs: List[Document],
         *,
         tenant: Optional[str] = None,
         batch_size: Optional[int] = None,
@@ -199,7 +171,7 @@ class WeaviateNewsVectorStore:
 
         返回：写入对象 ids（chunk_id）
         """
-        prepared, ids = self._prepare_docs(docs)
+        # prepared, ids = self._prepare_docs(docs)
 
         # WeaviateVectorStore 支持 add_documents；kwargs 会透传给 weaviate 的写入逻辑
         # tenant 用于 multi-tenancy（如你后续需要）：
@@ -207,16 +179,17 @@ class WeaviateNewsVectorStore:
             kwargs["tenant"] = tenant
         if batch_size:
             kwargs["batch_size"] = batch_size
+        self.store.add_documents(docs, **kwargs)
+        print("Documents Embedding Store Success!")
+        # try:
+        #     self.store.add_documents(docs,  **kwargs)
+        # except TypeError:
+        #     # 某些版本只支持 add_texts：这里做兼容兜底
+        #     texts = [d.page_content for d in prepared]
+        #     metadatas = [d.metadata for d in prepared]
+        #     self.store.add_texts(texts=texts, metadatas=metadatas, **kwargs)
 
-        try:
-            self.store.add_documents(prepared,  **kwargs)
-        except TypeError:
-            # 某些版本只支持 add_texts：这里做兼容兜底
-            texts = [d.page_content for d in prepared]
-            metadatas = [d.metadata for d in prepared]
-            self.store.add_texts(texts=texts, metadatas=metadatas, **kwargs)
-
-        return ids
+        # return ids
 
     # -------------------------
     # Query / Retrieval (Hybrid)
@@ -392,44 +365,183 @@ class WeaviateNewsVectorStore:
             f = f & nxt
         return f
 
-if __name__ == '__main__':
-    cfg = RAGConfig()
-    processor = DocumentProcessor(cfg)
+    def clear_all_weaviate_objects(
+            self,
+            *,
+            tenant: Optional[str] = None,
+            where: Optional[Filter] = None,
+            max_loops: int = 10_000,
+    ) -> int:
+        """
+        清空当前 index_name(collection) 内的所有对象，但保留 collection 本身（schema 不删）。
+        - Weaviate delete_many 单次有 QUERY_MAXIMUM_RESULTS 上限（默认 10k），所以循环执行直到删完。
+        - 返回：累计删除数量（尽力而为，少数版本/配置下可能只能返回近似值）。
+        """
+        # 默认匹配全量（你的数据里 chunk_id 必然存在）
+        where = where or Filter.by_property("chunk_id").like("*")
 
-    docs = processor.load_documents(
-        file_path="./data/marinelink/",
-        start_time="2026-01",
-        end_time="2026-01",
+        # v4 推荐用 collections.use
+        collection = self.client.collections.use(self.index_name)
+
+        total_deleted = 0
+
+        def _to_int(x: Any) -> int:
+            try:
+                return int(x)
+            except Exception:
+                return 0
+
+        def _extract_matches(resp: Any) -> int:
+            # 兼容 dict / pydantic / dataclass 等返回结构
+            if resp is None:
+                return 0
+            if isinstance(resp, dict):
+                for k in ("matches", "match_count", "objects_matched", "totalMatches"):
+                    if k in resp:
+                        return _to_int(resp.get(k))
+            for attr in ("matches", "match_count", "objects_matched", "totalMatches"):
+                if hasattr(resp, attr):
+                    return _to_int(getattr(resp, attr))
+            return 0
+
+        def _extract_deleted(resp: Any) -> int:
+            if resp is None:
+                return 0
+            if isinstance(resp, dict):
+                for k in ("successful", "successes", "objects_deleted", "deleted", "totalDeleted"):
+                    if k in resp:
+                        return _to_int(resp.get(k))
+            for attr in ("successful", "successes", "objects_deleted", "deleted", "totalDeleted"):
+                if hasattr(resp, attr):
+                    return _to_int(getattr(resp, attr))
+            return 0
+
+        kwargs: Dict[str, Any] = {}
+        if tenant:
+            kwargs["tenant"] = tenant
+
+        for _ in range(max_loops):
+            # dry_run 先看是否还有可删对象（避免无意义循环）
+            try:
+                preview = collection.data.delete_many(where=where, dry_run=True, **kwargs)
+            except TypeError:
+                # 兼容某些版本参数差异
+                preview = collection.data.delete_many(where=where, dry_run=True, verbose=False, **kwargs)
+
+            matches = _extract_matches(preview)
+            if matches <= 0:
+                break
+
+            # 正式删除（不要 verbose=True，部分版本/集群会触发 delete_many 响应解析问题）
+            try:
+                result = collection.data.delete_many(where=where, **kwargs)
+            except TypeError:
+                result = collection.data.delete_many(where=where, verbose=False, **kwargs)
+
+            deleted = _extract_deleted(result)
+            if deleted <= 0:
+                # 有些版本不回传 deleted 数，至少用 matches 做近似累加，避免总为 0
+                deleted = min(matches, 10_000)
+
+            total_deleted += deleted
+
+        return total_deleted
+
+def rebuild():
+    import weaviate
+    from weaviate.classes.config import Configure, Property, DataType
+
+    # 连接Weaviate
+    client = weaviate.connect_to_local()
+
+    # 校验连接状态
+    assert client.is_ready()
+
+    # 2. 删除旧集合（谨慎执行！会清空所有数据）
+    client.collections.delete("MarineNews")
+    print("旧集合已删除")
+
+    # 3. 重建集合，配置所有字段与向量参数
+    collection = client.collections.create(
+        name="MarineNews",
+        # 向量配置：根据你使用的嵌入模型选择距离算法（cosine为通用选择）
+        vectorizer_config=Configure.Vectorizer.none(),  # 手动传入向量（LangChain场景常用）
+        vector_index_config=Configure.VectorIndex.hnsw(
+            distance_metric=VectorDistances.COSINE
+        ),
+        # 定义所有属性字段（严格匹配你的 metadata_keys）
+        properties=[
+            Property(name="chunk_id", data_type=DataType.TEXT),
+            Property(name="news_id", data_type=DataType.INT),
+            Property(name="title", data_type=DataType.TEXT),
+            Property(name="publish_date", data_type=DataType.TEXT),
+            Property(name="source", data_type=DataType.TEXT),
+            Property(name="url", data_type=DataType.TEXT),
+            Property(name="chunk_idx", data_type=DataType.INT),  # 修复为整数类型
+            Property(name="total_chunks", data_type=DataType.INT),
+        ],
+        # 可选：配置倒排索引，优化过滤/检索性能
+        # inverted_index_config=Configure.inverted_index(
+        #     index_timestamps=True,
+        #     index_property_length=True
+        # )
     )
 
-    vs = WeaviateNewsVectorStore(cfg)
-    try:
-        vs.store_documents(docs)
-        # 混合检索：alpha 越大越偏“语义向量”，越小越偏“关键词(BM25)”
-        hits = vs.query("deep sea mining", k=5, alpha=0.8)
-        for d in hits:
-            print(d.metadata["news_id"], d.metadata["chunk_idx"], d.page_content[:120])
-    finally:
-        vs.close()
+    print("新集合 MarineNews 创建完成，所有字段已配置")
 
-    # vs = WeaviateNewsVectorStore(RAGConfig())
+    # 关闭连接
+    client.close()
+
+if __name__ == '__main__':
+
+    # cfg = RAGConfig()
+    # processor = DocumentProcessor(cfg)
+    #
+    # docs = processor.load_documents_from_mysql(
+    #     start_time="2025-01-11",
+    #     end_time="2025-12-31",
+    # )
+    #
+    # vs = WeaviateNewsVectorStore(cfg)
     # try:
-    #     docs = vs.query("deep sea mining", k=8, alpha=1)
-    #     for d in docs:
-    #          print(
-    #              d.metadata["news_id"],
-    #              d.metadata["chunk_idx"],
-    #              d.metadata["title"],
-    #              d.metadata["publish_time"],
-    #              d.metadata["url"],
-    #              d.page_content)
+    #     vs.store_documents(docs, batch_size=200)
+    #     # 混合检索：alpha 越大越偏“语义向量”，越小越偏“关键词(BM25)”
+    #     hits = vs.query_with_rerank("deep sea mining", k=8, alpha=0.8)
+    #     for d in hits:
+    #         print(d.metadata["news_id"], d.metadata["chunk_id"], d.page_content)
     # finally:
     #     vs.close()
 
+    vs = WeaviateNewsVectorStore(RAGConfig())
+    print(datetime.now())
+    try:
+        docs = vs.query_with_rerank("deep sea mining", k=10, alpha=0.8)
+        print(datetime.now())
+        for d in docs:
+             print(
+                 d.metadata["news_id"],
+                 d.metadata["chunk_idx"],
+                 d.metadata["title"],
+                 d.metadata["publish_date"],
+                 d.metadata["url"],
+                 "\n",
+                 d.page_content)
+    finally:
+        vs.close()
 
+    # ==== 清空数据库所有内容 ====
+    # vs = WeaviateNewsVectorStore(cfg)
+    # try:
+    #     deleted = vs.clear_all_weaviate_objects()  # 清空当前 index_name(Collection) 的全部数据
+    #     print("deleted:", deleted)
+    # finally:
+    #     vs.close()
 
     # 过滤示例：只查某来源
     # from weaviate.classes.query import Filter
     #
     # flt = Filter.by_property("source").equal("xxx")
     # hits2 = vs.query("海洋污染", k=5, alpha=0.6, filters=flt)
+
+    # === 数据库删除重建 ===
+    # rebuild()

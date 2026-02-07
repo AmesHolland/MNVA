@@ -1,6 +1,7 @@
 import glob
 import os
 from datetime import datetime
+from typing import List
 
 import pandas as pd
 # LangChain 核心导入
@@ -10,6 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from agent.config.rag_config import RAGConfig
 from agent.rag.model import get_embeddings
+from agent.rag.mysql_store import MySQLDB
 
 
 class DocumentProcessor:
@@ -29,7 +31,7 @@ class DocumentProcessor:
         # 核心列名映射：兼容中英文列名（你的文件是英文，可根据需要修改）
         self.COLS_MAP = {
             "title": ["标题", "Title", "title"],
-            "publish_time": ["发布时间", "PublishTime", "publish_time"],
+            "publish_date": ["发布时间", "PublishTime", "publish_date"],
             "content": ["内容", "Content", "content"],
             "source": ["来源", "Source", "source"],
             "url": ["详情页URL", "URL", "url", "详情页url"]
@@ -99,7 +101,7 @@ class DocumentProcessor:
 
             # 容错获取核心列名（防止列名大小写/中英文不一致）
             title_col = self._get_col_name(df.columns, self.COLS_MAP["title"])
-            time_col = self._get_col_name(df.columns, self.COLS_MAP["publish_time"])
+            time_col = self._get_col_name(df.columns, self.COLS_MAP["publish_date"])
             content_col = self._get_col_name(df.columns, self.COLS_MAP["content"])
             source_col = self._get_col_name(df.columns, self.COLS_MAP["source"])
             url_col = self._get_col_name(df.columns, self.COLS_MAP["url"])
@@ -134,7 +136,7 @@ class DocumentProcessor:
                     metadata={
                         "news_id": news_id,          # 唯一新闻ID
                         "title": news_title,         # 新闻标题
-                        "publish_time": news_pub_time,# 发布时间
+                        "publish_date": news_pub_time,# 发布时间
                         "source": news_source,       # 新闻来源
                         "url": news_url            # 详情页URL
                     }
@@ -156,3 +158,103 @@ class DocumentProcessor:
         print(f"成功加载并切片：共{len(documents)}个新闻切片（来自目标时间段的xlsx文件）")
         return documents
 
+    def load_documents_from_mysql(
+            self,
+            start_time: str,
+            end_time: str,
+            table_name: str = "marine_news"
+    ) -> List[Document]:
+        """
+        从MySQL加载指定时间段的海洋新闻，转换为带元数据的Document切片
+        :param start_time: 起始时间段（格式：YYYY-MM-DD，如2025-01-01）
+        :param end_time: 结束时间段（格式：YYYY-MM-DD，如2025-01-31）
+        :param table_name: 数据库表名
+        :return: Document切片列表
+        """
+        db = MySQLDB(
+            host="localhost",
+            port=3306,
+            user="root",
+            password="123456",
+            database="marine_news_db"
+        )
+
+        # 1. 校验时间格式与范围：升级为 年月日 格式校验
+        try:
+            # 修改解析格式为 YYYY-MM-DD，支持精确到日期
+            start_dt = datetime.strptime(start_time, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_time, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("时间段格式错误，请使用 YYYY-MM-DD（如2025-01-01）")
+
+        if start_dt > end_dt:
+            raise ValueError("起始时间不能晚于结束时间")
+
+        # 2. 构建SQL查询：修复语法错误 + 适配DATE类型直接查询（性能更优）
+        # 核心优化：publish_date是DATE类型，无需格式化，直接范围查询
+        sql = f"""
+            SELECT * FROM {table_name} 
+            WHERE `publish_date` BETWEEN %s AND %s
+        """
+        # 执行参数化查询，防止SQL注入
+        news_list = db.query(sql, params=(start_time, end_time))
+
+        # 校验查询结果
+        if not news_list:
+            raise ValueError(f"目标时间段[{start_time} 至 {end_time}]内未找到有效新闻数据")
+
+        documents = []
+        # 3. 遍历数据，构造文档并切片（未使用的索引改为_，消除代码警告）
+        for _, news in enumerate(news_list):
+            # 安全提取字段，增加空值兜底处理
+            news_id = news["id"]
+            # strip() + 空字符串兜底，避免None导致strip()报错
+            news_content = str(news.get("content", "")).strip()
+            news_title = str(news.get("title", "")).strip()
+            # 数据库返回的datetime.date对象直接转字符串，格式为YYYY-MM-DD
+            news_pub_time = str(news["publish_date"])
+            news_source = str(news.get("source", "")).strip()
+            news_url = str(news.get("url", "")).strip()
+
+            # 跳过无正文内容的新闻，避免生成空切片
+            if not news_content:
+                continue
+
+            # 构造完整新闻文档
+            full_doc = Document(
+                page_content=news_content,
+                metadata={
+                    "news_id": news_id,
+                    "title": news_title,
+                    "publish_date": news_pub_time,
+                    "source": news_source,
+                    "url": news_url
+                }
+            )
+
+            # 文本切片并补充切片元数据
+            chunks = self.text_splitter.split_documents([full_doc])
+            for chunk_idx, chunk in enumerate(chunks):
+                chunk.metadata.update({
+                    "chunk_idx": chunk_idx + 1,
+                    "chunk_id": f"{news_id}_c{chunk_idx:03d}",
+                    "total_chunks": len(chunks)
+                })
+            documents.extend(chunks)
+
+        # 最终校验与返回
+        print(f"成功加载并切片：共{len(documents)}个新闻切片")
+        return documents
+
+
+if __name__ == '__main__':
+    print(datetime.now())
+    dp = DocumentProcessor(RAGConfig())
+    print(datetime.now())
+
+    print(datetime.now())
+    documents = dp.load_documents_from_mysql(
+        start_time="2025-01-01",end_time="2025-01-25")
+    # for doc in documents:
+    #     print(doc)
+    print(datetime.now())

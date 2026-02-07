@@ -62,16 +62,26 @@ class TimeEvolutionAgent(BaseAgent):
         # 然后再让llm识别新闻中的 热点/实体
         # 整理出关于这个热点/实体 在时间演变下的变化趋势
         sorted_news_list = sort_news_by_date(news_list,recent_first=False)
-        formatted_news = [f"标题: {news['title']}\n日期: {news['publish_date']}\n内容: {news['content']}" 
+        # formatted_news = [f"标题: {news['title']}\n日期: {news['publish_date']}\n内容: {news['content']}"
+        #                   for news in sorted_news_list]
+        # # FIXME: 测试用config
+        # if config == None:
+        #     config = {"configurable":{"thread_id":"001"}}
+        #
+        # response = self.llm.invoke(f"""根据热点:{topic},分析下列新闻中的时间范围在{time_span}中的部分。
+        #                  说明在此时间范围内,此热点都涉及了哪些国家、时间演化趋势如何:{"\n\n".join(formatted_news)}""")
+        # info = response.info
+        formatted_news = [f"Title: {news['title']}\nDate: {news['publish_date']}\nContent: {news['content']}"
                           for news in sorted_news_list]
         # FIXME: 测试用config
         if config == None:
-            config = {"configurable":{"thread_id":"001"}}
-        
-        response = self.llm.invoke(f"""根据热点:{topic},分析下列新闻中的时间范围在{time_span}中的部分。
-                         说明在此时间范围内,此热点都涉及了哪些国家、时间演化趋势如何:{"\n\n".join(formatted_news)}""")
+            config = {"configurable": {"thread_id": "001"}}
+
+        response = self.llm.invoke(
+            f"""Based on the hot topic: {topic}, analyze the parts of the following news that fall within the time range of {time_span}.
+                         Explain which countries this hot topic involves and how its development trend changes over time within this time range:{"\n\n".join(formatted_news)}""")
+        print(response)
         info = response.info
-        
 
         # 结果以文本形式传到 messages 的 AIMessage里即可
         return {
@@ -93,6 +103,7 @@ def test_time_evolution_agent():
 
     # 3. 调用 invoke 方法并捕获结果
     try:
+        print("开始调用")
         result = agent.invoke(test_state)
         print("✅ Agent 调用成功！输出结果：")
         # 格式化打印结果，方便查看
@@ -103,4 +114,7 @@ def test_time_evolution_agent():
 
 # 执行测试
 if __name__ == "__main__":
-    test_time_evolution_agent()
+    # test_time_evolution_agent()
+
+    response = global_llm.invoke("你好，请问你是谁。要求：仅输出最终回答，不要展示任何思考过程、推理步骤")
+    print(response.content)

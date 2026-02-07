@@ -27,5 +27,5 @@ class TopicAnalysisAgent(BaseAgent):
         # 结果以文本形式传到 messages 的 AIMessage里即可
         return {
             "messages": [AIMessage(content="[stub] TopicAnalysisAgent done")],
-            "tool_trace": [{"agent": self.name, "status": "stub"}],
+            "tool_trace": [{"agent": self.name, "status": "stub"}]
         }
