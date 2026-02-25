@@ -58,39 +58,39 @@ const allUniqueTasks = computed(() => {
       </footer>
     </aside>
 
-<!--    <section class="right-panel">-->
+    <section class="right-panel">
 
-<!--      <template v-if="store.analysisResults?.report">-->
+      <template v-if="store.analysisResults?.report">
 
-<!--        <header class="top-toolbar">-->
-<!--          <div class="report-meta">-->
-<!--            <h1 class="report-title">{{ store.analysisResults.report.report_title }}</h1>-->
-<!--          </div>-->
+        <header class="top-toolbar">
+          <div class="report-meta">
+            <h1 class="report-title">{{ store.analysisResults.report.report_title }}</h1>
+          </div>
 
-<!--          <div class="view-toggle">-->
-<!--            <button-->
-<!--              :class="['toggle-btn', { active: viewMode === 'split' }]"-->
-<!--              @click="viewMode = 'split'"-->
-<!--              title="左右分栏：左侧阅读，右侧看图"-->
-<!--            >-->
-<!--              <span class="icon">◫</span> 仪表盘模式-->
-<!--            </button>-->
-<!--            <button-->
-<!--              :class="['toggle-btn', { active: viewMode === 'narrative' }]"-->
-<!--              @click="viewMode = 'narrative'"-->
-<!--              title="瀑布流：图文穿插阅读"-->
-<!--            >-->
-<!--              <span class="icon">📄</span> 叙事模式-->
-<!--            </button>-->
-<!--          </div>-->
-<!--        </header>-->
+          <div class="view-toggle">
+            <button
+              :class="['toggle-btn', { active: viewMode === 'split' }]"
+              @click="viewMode = 'split'"
+              title="左右分栏：左侧阅读，右侧看图"
+            >
+              <span class="icon">◫</span> 仪表盘模式
+            </button>
+            <button
+              :class="['toggle-btn', { active: viewMode === 'narrative' }]"
+              @click="viewMode = 'narrative'"
+              title="瀑布流：图文穿插阅读"
+            >
+              <span class="icon">📄</span> 叙事模式
+            </button>
+          </div>
+        </header>
 
-<!--        <div v-if="viewMode === 'split'" class="split-layout">-->
+        <div v-if="viewMode === 'split'" class="split-layout">
 
-<!--          <div class="split-text-pane">-->
-<!--            <div class="executive-summary-card">-->
-<!--              <strong>摘要：</strong>{{ store.analysisResults.report.executive_summary }}-->
-<!--            </div>-->
+          <div class="split-text-pane">
+            <div class="executive-summary-card">
+              <strong>摘要：</strong>{{ store.analysisResults.report.executive_summary }}
+            </div>
 
 <!--            <article-->
 <!--              v-for="(section, index) in store.analysisResults.report.sections"-->
@@ -115,65 +115,6 @@ const allUniqueTasks = computed(() => {
 <!--                </template>-->
 <!--              </div>-->
 <!--            </article>-->
-
-<!--            <div class="conclusion-box">-->
-<!--              <h3>战略结语</h3>-->
-<!--              <p>{{ store.analysisResults.report.conclusion }}</p>-->
-<!--            </div>-->
-<!--          </div>-->
-
-<!--          <div class="split-chart-pane">-->
-<!--            <template v-for="task in allUniqueTasks" :key="'chart-'+task.task_id">-->
-<!--              <ChartRenderer :task="task" />-->
-<!--            </template>-->
-<!--          </div>-->
-
-<!--        </div>-->
-
-<!--        <div v-else-if="viewMode === 'narrative'" class="narrative-layout">-->
-<!--          <div class="report-container">-->
-
-<!--            <div class="executive-summary-card">-->
-<!--              <span class="quote-icon">❝</span>-->
-<!--              <p>{{ store.analysisResults.report.executive_summary }}</p>-->
-<!--            </div>-->
-
-<!--            <article-->
-<!--              v-for="(section, index) in store.analysisResults.report.sections"-->
-<!--              :key="'nar-'+index"-->
-<!--              class="doc-section"-->
-<!--            >-->
-<!--              <div class="section-text-block">-->
-<!--                <h2 class="section-subtitle"><span class="section-index">{{ index + 1 }}</span>{{ section.subtitle }}</h2>-->
-<!--                <div class="section-paragraphs">-->
-<!--                  <p v-for="(paragraph, pIdx) in section.content.split('\n')" :key="pIdx">{{ paragraph }}</p>-->
-<!--                </div>-->
-<!--              </div>-->
-
-<!--              <div class="section-visual-block">-->
-<!--                <template v-for="task in getUniqueTasks([section])" :key="'nar-chart-'+task.task_id">-->
-<!--                   <ChartRenderer :task="task" />-->
-<!--                </template>-->
-<!--              </div>-->
-<!--            </article>-->
-
-<!--            <div class="doc-conclusion">-->
-<!--              <h3>战略结语</h3>-->
-<!--              <p>{{ store.analysisResults.report.conclusion }}</p>-->
-<!--            </div>-->
-<!--          </div>-->
-<!--        </div>-->
-
-<!--      </template>-->
-
-<!--      <template v-else>-->
-<!--      </template>-->
-
-<!--    </section>-->
-    <section class="right-panel">
-      <template v-if="store.analysisResults?.report">
-      <div v-if="viewMode === 'split'" class="split-layout">
-        <div class="split-text-pane">
           <article v-for="(section, index) in store.analysisResults.report.sections" :key="'text-'+index" class="text-section">
             <h2 class="section-subtitle">{{ index + 1 }}. {{ section.subtitle }}</h2>
 
@@ -181,20 +122,64 @@ const allUniqueTasks = computed(() => {
                <TraceableText :claims="section.content_claims" />
             </div>
           </article>
-        </div>
-      </div>
-          <div v-else-if="viewMode === 'narrative'" class="narrative-layout">
-         <div class="section-text-block">
-            <h2 class="section-subtitle"><span class="section-index">{{ index + 1 }}</span>{{ section.subtitle }}</h2>
-            <div class="section-paragraphs">
-               <TraceableText :claims="section.content_claims" />
+            <div class="conclusion-box">
+              <h3>战略结语</h3>
+              <p>{{ store.analysisResults.report.conclusion }}</p>
             </div>
-         </div>
           </div>
+
+          <div class="split-chart-pane">
+            <template v-for="task in allUniqueTasks" :key="'chart-'+task.task_id">
+              <ChartRenderer :task="task" />
+            </template>
+          </div>
+
+        </div>
+
+        <div v-else-if="viewMode === 'narrative'" class="narrative-layout">
+          <div class="report-container">
+
+            <div class="executive-summary-card">
+              <span class="quote-icon">❝</span>
+              <p>{{ store.analysisResults.report.executive_summary }}</p>
+            </div>
+
+            <article
+              v-for="(section, index) in store.analysisResults.report.sections"
+              :key="'nar-'+index"
+              class="doc-section"
+            >
+<!--              <div class="section-text-block">-->
+<!--                <h2 class="section-subtitle"><span class="section-index">{{ index + 1 }}</span>{{ section.subtitle }}</h2>-->
+<!--                <div class="section-paragraphs">-->
+<!--                  <p v-for="(paragraph, pIdx) in section.content.split('\n')" :key="pIdx">{{ paragraph }}</p>-->
+<!--                </div>-->
+<!--              </div>-->
+            <div class="section-text-block">
+                <h2 class="section-subtitle"><span class="section-index">{{ index + 1 }}</span>{{ section.subtitle }}</h2>
+                <div class="section-paragraphs">
+                   <TraceableText :claims="section.content_claims" />
+                </div>
+             </div>
+              <div class="section-visual-block">
+                <template v-for="task in getUniqueTasks([section])" :key="'nar-chart-'+task.task_id">
+                   <ChartRenderer :task="task" />
+                </template>
+              </div>
+            </article>
+
+            <div class="doc-conclusion">
+              <h3>战略结语</h3>
+              <p>{{ store.analysisResults.report.conclusion }}</p>
+            </div>
+          </div>
+        </div>
+
       </template>
 
       <template v-else>
       </template>
+
     </section>
 
     <EvidenceDrawer />

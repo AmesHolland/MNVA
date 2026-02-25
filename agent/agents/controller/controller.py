@@ -18,6 +18,8 @@ from agent.agents.sub_agent.relation_miner_agent import relation_miner_agent
 from agent.config.llm_config import llm_qw_quick
 from agent.tools.news_manager import get_news_by_id
 
+from agent.tools.base import safe_parse_json
+
 # ==================== 对话模型定义 ====================
 model = llm_qw_quick
 # ==================== 数据模型定义 ====================
