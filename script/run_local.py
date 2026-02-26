@@ -5,9 +5,6 @@ import os
 from agent.services.runner import AgentRunner
 
 
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = "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"
-
 
 if __name__ == "__main__":
     runner = AgentRunner()
