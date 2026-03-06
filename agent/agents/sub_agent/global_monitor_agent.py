@@ -17,7 +17,7 @@ class TopicNode(BaseModel):
     topic_name: str = Field(description="Name of the clustered topic (e.g., 'Naval Drills', 'Fishery Disputes')")
     description: str = Field(description="A brief 1-sentence explanation of this topic")
     temporal_pattern: str = Field(description="Describe how this topic shifted over time (e.g., 'Continuous low-level reports', 'Sudden burst around mid-month').")
-    source_ids: List[str] = Field(description="List of DOC_IDs that belong to this topic")
+    source_ids: List[str] = Field(description="List of DOC_IDs that belong to this topic. Like ['001']")
 
 class GeoPoint(BaseModel):
     date: str = Field(description="Strict YYYY-MM-DD when this specific event occurred at this location")
@@ -26,13 +26,13 @@ class GeoPoint(BaseModel):
     topic_name: str = Field(description="Name of the topic this location belongs to")
     intensity: int = Field(description="Number of related news articles for this location (1-5 scale)")
     summary: str = Field(description="Short summary for the map tooltip")
-    source_ids: List[str] = Field(description="List of DOC_IDs that support this geographic event")
+    source_ids: List[str] = Field(description="List of DOC_IDs that support this geographic event. Like ['001']")
 
 class TimePoint(BaseModel):
     date: str = Field(description="Date in YYYY-MM-DD format")
     topic_name: str = Field(description="Name of the topic")
     count: int = Field(description="Number of articles for this topic on this date")
-    source_ids: List[str] = Field(description="List of DOC_IDs published on this date for this topic")
+    source_ids: List[str] = Field(description="List of DOC_IDs published on this date for this topic. Like ['001']")
 
 class GlobalMonitorOutput(BaseModel):
     overview_claims: List[Claim] = Field(description="A macro summary broken down into traceable claims.")

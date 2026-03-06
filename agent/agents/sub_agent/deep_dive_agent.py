@@ -33,7 +33,7 @@ class EventNode(BaseModel):
     action_type: str = Field(description="Category: 'Patrol', 'Drill', 'Statement', 'Conflict', 'Visit'.")
     summary: str = Field(description="Concise summary of the action (max 10 words).")
     scores: IntensityScore = Field(description="Intensity assessment of this specific event.")
-    source_ids: List[str] = Field(description="List of exact DOC_IDs from the input text that describe this event.")
+    source_ids: List[str] = Field(description="List of exact DOC_IDs from the input text that describe this event. Like ['001']")
 
 # 3. 时空演变阶段 (用于前端渲染垂直时间轴组件)
 class EvolutionPhase(BaseModel):
@@ -41,7 +41,7 @@ class EvolutionPhase(BaseModel):
     start_date: str = Field(description="Start date of this phase in YYYY-MM-DD format.")
     end_date: str = Field(description="End date of this phase in YYYY-MM-DD format.")
     phase_summary: str = Field(description="Narrative summary of the entity's strategy or situation during this phase.")
-    source_ids: List[str] = Field(description="List of DOC_IDs supporting this phase.")
+    source_ids: List[str] = Field(description="List of DOC_IDs supporting this phase. Like ['001']")
 
 # 4. 完整输出结构 (加入 evolution_phases)
 class DeepDiveOutput(BaseModel):

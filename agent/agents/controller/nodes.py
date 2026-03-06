@@ -316,6 +316,7 @@ def integrating_node(state: ResearchState) -> dict:
     raw_results = state.get("task_results", {})
     evidence_pool = state.get("news_list", {})
     blueprint = state.get("spatiotemporal_blueprint", {})  # 【极度重要】：获取 Anchor 的蓝图
+    profile_data = state.get("analysis_results", {}).get("data_profile", {})
     # 1. 组装上下文区块
     context_blocks = []
     for task_id, res in raw_results.items():
@@ -361,7 +362,8 @@ def integrating_node(state: ResearchState) -> dict:
         "report": final_report,
         "tasks": raw_results,
         "evidence_pool": evidence_pool,
-        "spatiotemporal_blueprint": blueprint
+        "spatiotemporal_blueprint": blueprint,
+        "profile_data":profile_data
     }
 
     return {

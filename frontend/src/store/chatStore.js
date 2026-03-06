@@ -49,6 +49,25 @@ export const useChatStore = defineStore('chat', () => {
     }, 300) // 等待抽屉收回动画结束后清空数据
   }
 
+  // 【新增】：全局软刷选状态 (Soft Brushing State)
+  const brushState = ref({
+    timeRange: null, // 格式: [startTimestamp, endTimestamp] (毫秒级时间戳)
+    spatialLabels: [] // 当前激活的空间标签，例如: ['南海', '菲律宾']
+  })
+
+  // 【新增】：更新刷选状态的 Action
+  const updateBrushState = (timeRange, spatialLabels = null) => {
+    brushState.value.timeRange = timeRange
+    if (spatialLabels !== null) {
+      brushState.value.spatialLabels = spatialLabels
+    }
+  }
+
+  // 【新增】：清除刷选状态 (恢复全局高亮)
+  const clearBrushState = () => {
+    brushState.value.timeRange = null
+    brushState.value.spatialLabels = []
+  }
   // src/store/chatStore.js
   // const analysisResults = ref(null) // 存放后端发来的 integrated_payload
   const activeSectionIndex = ref(0) // 记录当前高亮的报告章节索引
@@ -178,5 +197,6 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  return { sessionId, messages, isGenerating, hitlState, analysisResults, sendMessage, sendFeedback, evidenceState, openEvidence, closeEvidence }
+  return { sessionId, messages, isGenerating, hitlState, analysisResults, sendMessage, sendFeedback, evidenceState, openEvidence, closeEvidence,
+  brushState, updateBrushState, clearBrushState}
 })

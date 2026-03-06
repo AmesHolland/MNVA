@@ -27,7 +27,7 @@ class RelationEdge(BaseModel):
 
     # 【核心新增】：证据追踪字段
     source_ids: List[str] = Field(
-        description="List of exact DOC_IDs from the input text that describe this relationship.")
+        description="List of exact DOC_IDs from the input text that describe this relationship. Like ['001']")
 
 
 class RelationExtractionOutput(BaseModel):
@@ -81,6 +81,7 @@ def relation_miner_agent(entities, news_list, blueprint_context=""):
     # 2. Python 聚合逻辑 (Aggregation)
     edge_aggregator = defaultdict(int)
     edge_details = defaultdict(list)
+    edge_dates = defaultdict(set)
     # 【核心修复】：新增 evidence_aggregator，用于存放合并后的溯源 IDs
     edge_sources = defaultdict(set)
 
@@ -91,17 +92,20 @@ def relation_miner_agent(entities, news_list, blueprint_context=""):
         tgt = r['target'].strip()
         rtype = r['relation_type']
         s_ids = r.get('source_ids', [])  # 提取该条关系的新闻ID
-
+        # 提取这条具体关系的发生日期
+        i_date = r.get('interaction_date', '')
         nodes.add(src)
         nodes.add(tgt)
 
         key = (src, tgt, rtype)
         edge_aggregator[key] += 1
         edge_details[key].append(f"[{r['interaction_date']}] {r['description']}")
-
         # 【核心修复】：将溯源 ID 塞入集合（自动去重）
         for sid in s_ids:
             edge_sources[key].add(sid)
+        # 【新增】：将日期存入 Set 进行去重
+        if i_date:
+            edge_dates[key].add(i_date)
 
     # 3. 构建 Vega-Lite / ECharts 友好的图数据
     graph_nodes = [{"id": n, "group": "Entity"} for n in nodes]
@@ -111,6 +115,8 @@ def relation_miner_agent(entities, news_list, blueprint_context=""):
         details = edge_details[(src, tgt, rtype)]
         # 【核心修复】：将 set 转回 list 传给前端
         merged_source_ids = list(edge_sources[(src, tgt, rtype)])
+        # 【新增】：将日期 Set 转为 List 传给前端
+        active_dates_list = list(edge_dates[(src, tgt, rtype)])
 
         graph_links.append({
             "source": src,
@@ -119,7 +125,8 @@ def relation_miner_agent(entities, news_list, blueprint_context=""):
             "value": weight,
             "label": details[0],
             "tooltip": "\n".join(details[:3]),
-            "source_ids": merged_source_ids  # 🌟 成功把证据链绑到了粗边上！
+            "source_ids": merged_source_ids,  # 🌟 成功把证据链绑到了粗边上！
+            "active_dates": active_dates_list  # 🌟 补齐了！前端现在知道这条线在哪些天亮起
         })
 
     # 4. 构建 Sankey 数据

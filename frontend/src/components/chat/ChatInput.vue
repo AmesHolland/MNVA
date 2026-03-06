@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useChatStore } from '../../store/chatStore'
 
 const store = useChatStore()
-const inputText = ref('')
+const inputText = ref('帮我分析2025年第四季度美国在深海采矿方面的动态')
 
 const handleSend = () => {
   if (inputText.value.trim() && !store.isGenerating && !store.hitlState.isWaiting) {

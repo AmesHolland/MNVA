@@ -10,25 +10,70 @@ let resizeObserver = null
 
 // --- 1. 模拟与整合标签数据 (Spatial & Semantic) ---
 // 实际应用中，这里应替换为 store.analysisResults.data_profile 的真实数据
-const spatialLabels = ref([
-  { name: '辽宁', active: false }, { name: '山东', active: false },
-  { name: '江苏', active: false }, { name: '上海', active: false },
-  { name: '浙江', active: false }, { name: '福建', active: false },
-  { name: '广东', active: false }, { name: '海南', active: false },
-  { name: '香港', active: false }, { name: '澳门', active: false },
-  { name: '南海', active: false, isFocus: true }, // 假设是 Anchor 的焦点
-  { name: '太平洋', active: false }
-])
+// const spatialLabels = ref([
+//   { name: '辽宁', active: false }, { name: '山东', active: false },
+//   { name: '江苏', active: false }, { name: '上海', active: false },
+//   { name: '浙江', active: false }, { name: '福建', active: false },
+//   { name: '广东', active: false }, { name: '海南', active: false },
+//   { name: '香港', active: false }, { name: '澳门', active: false },
+//   { name: '南海', active: false }, // 假设是 Anchor 的焦点
+//   { name: '太平洋', active: false }
+// ])
+//
+// const topicLabels = ref([
+//   { name: '海上风电', active: false }, { name: '联合军演', active: false, isFocus: true },
+//   { name: '渔业纠纷', active: false }, { name: '深海采矿', active: false }
+// ])
+// 初始化可以给空数组，因为后续会被后端数据覆盖
+const spatialLabels = ref([])
+const topicLabels = ref([])
 
-const topicLabels = ref([
-  { name: '海上风电', active: false }, { name: '联合军演', active: false, isFocus: true },
-  { name: '渔业纠纷', active: false }, { name: '深海采矿', active: false }
-])
+// 编写一个专门用于同步数据的函数
+const syncLabelsFromProfile = (profile) => {
+  if (!profile) return
+
+  // 1. 替换 spatialLabels
+  if (profile.actual_spatial_range && Array.isArray(profile.actual_spatial_range)) {
+    spatialLabels.value = profile.actual_spatial_range.map(location => ({
+      name: location,
+      active: true
+    }))
+  }
+
+  // 2. 替换 topicLabels
+  if (profile.actual_topics && Array.isArray(profile.actual_topics)) {
+    topicLabels.value = profile.actual_topics.map(topic => ({
+      name: topic,
+      active: true,
+      // 如果你需要给特定的 topic 加上 isFocus: true，可以在这里加个判断，例如：
+      // isFocus: topic === '联合军演'
+    }))
+  }
+}
+
+// 实际应用中，你可以在 onMounted 或者 watch 中调用它：
+watch(() => store.analysisResults.profile_data, (newProfile) => {
+  syncLabelsFromProfile(newProfile)
+}, { immediate: true })
+
 
 // 标签点击事件 (触发软刷选)
+// 修改之前的 toggleLabel 方法
 const toggleLabel = (label) => {
   label.active = !label.active
-  // TODO: 这里可以调用 store 方法，通知下方图表让非相关的散点变灰
+
+  // 标签改变时，同样需要通知 Store 当前的时间轴状态和新标签状态
+  if (chartInstance.value) {
+    const currentOption = chartInstance.value.getOption()
+    const startTimestamp = currentOption.dataZoom[0].startValue
+    const endTimestamp = currentOption.dataZoom[0].endValue
+
+    const activeSpatialTags = spatialLabels.value.filter(l => l.active).map(l => l.name)
+    const activeTopicTags = topicLabels.value.filter(l => l.active).map(l => l.name)
+
+    store.updateBrushState([startTimestamp, endTimestamp], [...activeSpatialTags, ...activeTopicTags])
+    // console.log("[startTimestamp, endTimestamp]:" + [startTimestamp, endTimestamp])
+  }
 }
 
 // --- 2. Timeline 图表渲染 ---
@@ -48,10 +93,12 @@ const renderTimeline = () => {
   // 2. 处理 Anchor 蓝图数据
   const blueprint = store.analysisResults?.spatiotemporal_blueprint
   const markAreaRegions = []
-  const phaseColors = ['rgba(103, 194, 58, 0.2)', 'rgba(230, 162, 60, 0.2)', 'rgba(245, 108, 108, 0.2)']
+  const phaseColors = ['rgba(103, 194, 58, 0.5)', 'rgba(230, 162, 60, 0.5)', 'rgba(245, 108, 108, 0.5)']
 
   if (blueprint && blueprint.phases) {
+
     blueprint.phases.forEach((phase, index) => {
+
       // 严格校验格式
       if (!phase.time_range || !phase.time_range.includes(' to ')) return;
       const [startStr, endStr] = phase.time_range.split(' to ');
@@ -60,12 +107,17 @@ const renderTimeline = () => {
       // 过滤无效日期
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return;
 
-      markAreaRegions.push({
-        name: `Phase ${phase.phase_id}: ${phase.phase_name}`,
-        itemStyle: { color: phaseColors[index % phaseColors.length] },
-        label: { position: 'insideTop', color: '#606266', fontWeight: 'bold' },
-        xAxis: [startDate.getTime(), endDate.getTime()] // 时间戳格式
-      })
+      markAreaRegions.push([  // 【注意】：这里是一个数组包裹着两个对象
+        {
+          name: `Phase ${phase.phase_id}: ${phase.phase_name}`,
+          itemStyle: { color: phaseColors[index % phaseColors.length] },
+          label: { position: 'insideTop', color: '#606266', fontWeight: 'bold' },
+          xAxis: startDate.getTime() // 第一个对象：区域的起点
+        },
+        {
+          xAxis: endDate.getTime()   // 第二个对象：区域的终点
+        }
+      ])
     })
   }
 
@@ -115,12 +167,42 @@ const renderTimeline = () => {
     ]
   }
 
+  // 在 SpatiotemporalNavigator.vue 的 renderTimeline 函数末尾添加：
+
+  // 渲染图表
   chartInstance.value.setOption(option, true)
 
-  // 监听时间轴缩放事件
-  chartInstance.value.on('datazoom', (params) => {
-    // 业务逻辑...
+  // 【核心交互】：监听 timeline 的区域缩放 (拖拽/滚轮) 事件
+  chartInstance.value.on('datazoom', () => {
+    if (!chartInstance.value) return
+
+    // 获取当前 ECharts 实例的最实时配置项
+    const currentOption = chartInstance.value.getOption()
+
+    // 从 dataZoom 组件中提取当前的物理时间边界 (startValue 和 endValue)
+    // 注意：因为我们 xAxis 配置了 type: 'time'，所以这里拿到的是毫秒级时间戳
+    const startTimestamp = currentOption.dataZoom[0].startValue
+    const endTimestamp = currentOption.dataZoom[0].endValue
+
+    // 将当前所有高亮的空间/语义标签提取出来
+    const activeSpatialTags = spatialLabels.value.filter(l => l.active).map(l => l.name)
+    const activeTopicTags = topicLabels.value.filter(l => l.active).map(l => l.name)
+    const allActiveTags = [...activeSpatialTags, ...activeTopicTags]
+
+    // 🔥 汇报给全局 Store！
+    store.updateBrushState([startTimestamp, endTimestamp], allActiveTags)
+
   })
+
+  // 初始化时，如果默认有缩放范围，主动派发一次
+  setTimeout(() => {
+    const initOption = chartInstance.value.getOption()
+    if (initOption && initOption.dataZoom && initOption.dataZoom.length > 0) {
+      const initStart = initOption.dataZoom[0].startValue
+      const initEnd = initOption.dataZoom[0].endValue
+      store.updateBrushState([initStart, initEnd], [])
+    }
+  }, 500)
 }
 
 onMounted(() => {
@@ -138,11 +220,9 @@ watch(() => store.analysisResults?.spatiotemporal_blueprint, () => {
 
 <template>
   <div class="spatiotemporal-navigator">
-
     <div class="labels-panel">
-
       <div class="label-group">
-        <span class="group-title">📍 空间作用域 (Spatial):</span>
+        <span class="group-title">📍 Spatial:</span>
         <button
           v-for="item in spatialLabels" :key="item.name"
           :class="['label-btn', { active: item.active, 'is-focus': item.isFocus }]"
@@ -154,7 +234,7 @@ watch(() => store.analysisResults?.spatiotemporal_blueprint, () => {
       </div>
 
       <div class="label-group">
-        <span class="group-title">🏷️ 语义话题 (Topics):</span>
+        <span class="group-title">🏷️ Topics:</span>
         <button
           v-for="item in topicLabels" :key="item.name"
           :class="['label-btn topic-btn', { active: item.active, 'is-focus': item.isFocus }]"
@@ -220,14 +300,14 @@ watch(() => store.analysisResults?.spatiotemporal_blueprint, () => {
 }
 
 .label-btn:hover { background: #eef5fe; color: #409EFF; }
-.label-btn.active { background: #409EFF; color: #ffffff; border-color: #409EFF; }
+.label-btn.active { background: #93c6ff; color: #ffffff; border-color: #409EFF; }
 
 /* 重点标识样式 (Anchor Focus) */
 .label-btn.is-focus { border-color: #E6A23C; box-shadow: 0 0 4px rgba(230, 162, 60, 0.3); }
 .star { color: #E6A23C; }
 .label-btn.active .star { color: #FFD591; }
-
-.topic-btn.active { background: #67C23A; border-color: #67C23A; }
+.topic-btn:hover { background: #eef5fe; color: #67C23A; }
+.topic-btn.active { background: #a5dd8d; border-color: #67C23A; }
 
 /* Timeline 容器 */
 .timeline-container {
