@@ -124,4 +124,4 @@ def get_news_by_id(news_id_list : List[str]):
         }
     ]
 
-    return news_list[:8]
+    return news_list

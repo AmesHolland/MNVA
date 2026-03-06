@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 import pandas as pd
 from collections import defaultdict
 
-from agent.agents.base import Claim
+from agent.agents.schemas import Claim
 from agent.config.llm_config import llm_qw_quick
 from agent.config.prompt_template import RELATION_MINER_PROMPT
 
@@ -48,78 +48,94 @@ relation_chain = prompt | llm | parser
 
 # ... 初始化 LLM 和 Parser (同上) ...
 
-def relation_miner_agent(entities, news_list):
+from collections import defaultdict
+
+
+# --- 核心节点函数 ---
+# 【新增】：接收 blueprint_context
+def relation_miner_agent(entities, news_list, blueprint_context=""):
     """
-    Extracts relations and builds a graph structure.
+    Extracts relations and builds a graph structure with full provenance.
     """
-    print(f"--- RELATION MINER: Analyzing network for {entities} ---")
+    print(f"--- 🕸️ RELATION MINER: Analyzing network for {entities} ---")
 
+    # 格式化输入，确保 DOC_ID 存在
+    news_context = "\n".join(
+        [f"[DOC_ID: {d.get('DOC_ID', 'UNKNOWN')}] - [{d.get('publish_date', 'N/A')}] {d.get('content', '')}" for d in
+         news_list])
 
-
-    news_context = "\n".join([f"[{d.get("DOC_ID")}]- [{d['publish_date']}] {d['content']}" for d in news_list])
     # 1. 运行 LLM 提取关系
-    # 为了防止上下文过长，这里可能需要分批处理(Batch Processing)再合并，
-    # 但为了简化演示，我们假设一次性处理。
     try:
         raw_result = relation_chain.invoke({
             "focus_entities": ", ".join(entities),
-            "news_context": news_context
+            "news_context": news_context,
+            "blueprint_context": blueprint_context  # 【新增】：注入蓝图
         })
     except Exception as e:
-        return {"final_answer": "Network analysis failed."}
+        print(f"❌ Relation Miner 运行出错: {e}")
+        return {"final_answer": [{"statement": "Network analysis failed.", "is_direct_quote": False, "source_ids": []}],
+                "visualization_data": {}, "structured_insight": {}}
 
     raw_relations = raw_result.get("relations", [])
 
     # 2. Python 聚合逻辑 (Aggregation)
-    # 目标：将多条相似的边合并为一条，并增加权重 (Weight)
-
-    # Key = (Source, Target, Type)
-    # Value = Count
     edge_aggregator = defaultdict(int)
-    edge_details = defaultdict(list)  # 存储具体的描述，用于 Tooltip
+    edge_details = defaultdict(list)
+    # 【核心修复】：新增 evidence_aggregator，用于存放合并后的溯源 IDs
+    edge_sources = defaultdict(set)
 
     nodes = set()
 
     for r in raw_relations:
-        # 标准化实体名称 (简单处理)
         src = r['source'].strip()
         tgt = r['target'].strip()
         rtype = r['relation_type']
+        s_ids = r.get('source_ids', [])  # 提取该条关系的新闻ID
 
-        # 记录节点
         nodes.add(src)
         nodes.add(tgt)
 
-        # 聚合边
         key = (src, tgt, rtype)
         edge_aggregator[key] += 1
         edge_details[key].append(f"[{r['interaction_date']}] {r['description']}")
+
+        # 【核心修复】：将溯源 ID 塞入集合（自动去重）
+        for sid in s_ids:
+            edge_sources[key].add(sid)
 
     # 3. 构建 Vega-Lite / ECharts 友好的图数据
     graph_nodes = [{"id": n, "group": "Entity"} for n in nodes]
 
     graph_links = []
     for (src, tgt, rtype), weight in edge_aggregator.items():
-        # 获取最新的描述作为 Label
         details = edge_details[(src, tgt, rtype)]
+        # 【核心修复】：将 set 转回 list 传给前端
+        merged_source_ids = list(edge_sources[(src, tgt, rtype)])
 
         graph_links.append({
             "source": src,
             "target": tgt,
             "type": rtype,
-            "value": weight,  # 线条粗细
-            "label": details[0],  # 线条上的文字（取第一条）
-            "tooltip": "\n".join(details[:3])  # 鼠标悬停显示前3条细节
+            "value": weight,
+            "label": details[0],
+            "tooltip": "\n".join(details[:3]),
+            "source_ids": merged_source_ids  # 🌟 成功把证据链绑到了粗边上！
         })
 
-    # 4. 构建 Sankey 数据 (仅针对有因果关系的边)
+    # 4. 构建 Sankey 数据
     causal_links = [
-        {"source": r['source'], "target": r['target'], "value": 1}
+        {
+            "source": r['source'],
+            "target": r['target'],
+            "value": 1,
+            "source_ids": r.get('source_ids', [])  # 桑基图也可以带上溯源！
+        }
         for r in raw_relations if r.get('is_causal')
     ]
 
     return {
-        "final_answer": raw_result['overview_claims'],
+        # 注意：这里假设 raw_result 里已经按我们上一次的约定，把 summary 改为了 overview_claims
+        "final_answer": raw_result.get('overview_claims', []),
         "visualization_data": {
             "type": "relation_network",
             "graph_chart": {
@@ -130,5 +146,3 @@ def relation_miner_agent(entities, news_list):
         },
         "structured_insight": raw_result
     }
-
-

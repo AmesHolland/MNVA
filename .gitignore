@@ -1,6 +1,7 @@
 ./agent/tmp/
 .env
 .idea/
-./rag/data/
+./agent/rag/data/
 ./venv/
 ./requirements.txt
+.proxyai

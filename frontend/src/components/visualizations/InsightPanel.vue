@@ -11,7 +11,7 @@ const insight = computed(() => {
 
 // 判断是否为有效数据（排除我们初始化的占位符）
 const hasValidData = computed(() => {
-  return insight.value && insight.value.title && insight.value.title !== "等待数据..."
+  return insight.value && insight.value.title && insight.value.title !== "Waiting data..."
 })
 </script>
 
@@ -40,7 +40,7 @@ const hasValidData = computed(() => {
       </div>
       <div v-else class="hint-box">
         <span class="hint-icon">🎨</span>
-        <p class="hint-text">请在左侧控制台输入探索意图，系统将在此提取宏观态势研判...</p>
+        <p class="hint-text">Please input your exploration objective in the left console, and the system will conduct macro situational analysis here...</p>
       </div>
     </div>
   </div>

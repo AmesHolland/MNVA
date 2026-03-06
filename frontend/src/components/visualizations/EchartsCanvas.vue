@@ -1,128 +1,208 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted, shallowRef } from 'vue'
 import * as echarts from 'echarts'
+import { useChatStore } from '../../store/chatStore' // 【新增】引入 Store
+
+// 【新增】：定义响应式的视图模式变量，默认为 'timeline'
+const viewMode = ref('timeline');
+
+
 
 const props = defineProps({
-  chartType: String, // 标识当前需要渲染什么图，如 'global_map', 'sankey', 'relation_network'
-  chartData: [Array, Object] // 后端传来的具体数据
+  chartType: String,
+  chartData: [Array, Object]
 })
 
+const store = useChatStore() // 【新增】初始化 Store
 const chartRef = ref(null)
 let chartInstance = shallowRef(null)
 let resizeObserver = null
 
-// 核心渲染逻辑路由
 const renderChart = async () => {
   if (!chartInstance.value || !props.chartData || props.chartData.length === 0) return
-
   chartInstance.value.showLoading()
-
   let option = {}
 
   // ==========================================
-  // 路由 1: Global Monitor 的全局态势地图
+  // 1. Global Monitor 全局地图
   // ==========================================
   if (props.chartType === 'global_map') {
-    // 1. 动态加载世界地图 GeoJSON
-    if (!echarts.getMap('world')) {
-      try {
-        const res = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json')
-        const worldJson = await res.json()
-        echarts.registerMap('world', worldJson)
-      } catch (e) {
-        console.error('地图数据加载失败', e)
+  if (!echarts.getMap('world')) {
+    const res = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json')
+    echarts.registerMap('world', await res.json())
+  }
+
+  // 获取视图模式：'all' 表示展示所有热点，'timeline' 表示按时间播放
+  const mode = viewMode.value;                  // 替换为这行
+  const rawData = props.chartData;
+
+  // --- 公共的 Tooltip 配置 ---
+  const commonTooltip = {
+    trigger: 'item',
+    formatter: (params) => {
+      const [lon, lat, intensity, topic, summary, source_ids, date] = params.value;
+      let tip = `
+        <div style="font-weight:bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;">
+          🗓️ ${date} | ${topic} (intensity: ${intensity})
+        </div>
+        <div style="max-width: 250px; white-space: normal; line-height: 1.4;">${summary}</div>
+        <div style="font-size: 12px; color: #666; margin-top: 5px;">📍 [${lat.toFixed(2)}, ${lon.toFixed(2)}]</div>
+      `;
+      if (source_ids && source_ids.length > 0) {
+        tip += `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #ebeef5; color:#409EFF; font-size:12px; font-weight:bold; cursor: pointer;">
+                  👆Click the scatter point to view ${source_ids.length} pieces of original intelligence
+                </div>`;
       }
+      return tip;
     }
+  };
 
-    // 2. 将后端的 GeoPoint 转换为 ECharts 需要的 [经度, 纬度, 烈度, 主题, 摘要]
-    const scatterData = props.chartData.map(item => ({
+  // --- 公共的地图基础配置 ---
+  const commonGeo = {
+    map: 'world',
+    roam: true,
+    zoom: 1.2,
+    itemStyle: { areaColor: '#e4e7ed', borderColor: '#ffffff' },
+    emphasis: { itemStyle: { areaColor: '#d1d6e0' } }
+  };
+
+  // ==========================================
+  // 模式 1: 全局聚合视图 (展示所有热点)
+  // ==========================================
+  if (mode === 'all') {
+    const allScatterData = rawData.map(item => ({
       name: item.topic_name,
-      value: [
-        item.lon,
-        item.lat,
-        item.intensity,
-        item.topic_name,
-        item.summary
-      ]
-    }))
+      value: [item.lon, item.lat, item.intensity, item.topic_name, item.summary, item.source_ids || [], item.date]
+    }));
 
-    // 3. 配置 ECharts Option
     option = {
       backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        formatter: (params) => {
-          const [lon, lat, intensity, topic, summary] = params.value
-          return `
-            <div style="font-weight:bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;">
-              ${topic} (烈度: ${intensity})
-            </div>
-            <div style="max-width: 200px; white-space: normal;">${summary}</div>
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">📍 [${lat.toFixed(2)}, ${lon.toFixed(2)}]</div>
-          `
-        }
-      },
-      geo: {
-        map: 'world',
-        roam: true, // 允许鼠标缩放和平移
-        zoom: 1.2,
+      tooltip: commonTooltip,
+      geo: commonGeo,
+      series: [{
+        name: '全局热点分布',
+        type: 'effectScatter',
+        coordinateSystem: 'geo',
+        data: allScatterData,
+        // 根据烈度计算大小
+        symbolSize: (val) => Math.max(8, Math.min(val[2] * 4, 30)),
+        showEffectOn: 'emphasis', // 聚合模式下，为了避免满屏乱闪，可以改为鼠标 hover 时才泛起涟漪 ('emphasis')，或者保留 'render'
+        rippleEffect: { brushType: 'stroke', scale: 3 },
         itemStyle: {
-          areaColor: '#e4e7ed', // 陆地颜色
-          borderColor: '#ffffff', // 国界线颜色
-          borderWidth: 1
-        },
-        emphasis: { itemStyle: { areaColor: '#d3dce6' } }
-      },
-      series: [
-        {
-          name: '热点事件',
-          type: 'effectScatter', // 涟漪特效散点图
+          color: '#F56C6C',
+          shadowBlur: 5,
+          shadowColor: '#F56C6C',
+          opacity: 0.7 // 增加透明度，这样多天在同一个地点的点叠加在一起时，颜色会更深，形成类似热力图的效果
+        }
+      }]
+    };
+  }
+
+  // ==========================================
+  // 模式 2: 动态演化视图 (带时间轴)
+  // ==========================================
+  else if (mode === 'timeline') {
+    const sortedRawData = [...rawData].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const uniqueDates = [...new Set(sortedRawData.map(item => item.date))];
+
+    const timelineOptions = uniqueDates.map(currentDate => {
+      const dayData = sortedRawData.filter(item => item.date === currentDate);
+      return {
+        title: { text: `Trend Evolution: ${currentDate}`, left: 'center', textStyle: { color: '#333', fontSize: 16 } },
+        series: [{
+          name: 'Hot Events',
+          type: 'effectScatter',
           coordinateSystem: 'geo',
-          data: scatterData,
-          symbolSize: (val) => {
-            // 根据 intensity 动态计算气泡大小，防止过大或过小
-            return Math.max(8, Math.min(val[2] * 2, 30))
-          },
+          data: dayData.map(item => ({
+            name: item.topic_name,
+            value: [item.lon, item.lat, item.intensity, item.topic_name, item.summary, item.source_ids || [], item.date]
+          })),
+          symbolSize: (val) => Math.max(8, Math.min(val[2] * 4, 30)),
           showEffectOn: 'render',
           rippleEffect: { brushType: 'stroke', scale: 3 },
-          itemStyle: {
-            color: '#F56C6C', // 危险/高亮红色
-            shadowBlur: 10,
-            shadowColor: '#F56C6C'
-          }
-        }
-      ]
-    }
+          itemStyle: { color: '#F56C6C', shadowBlur: 10, shadowColor: '#F56C6C', opacity: 0.9 }
+        }]
+      };
+    });
+
+    option = {
+      baseOption: {
+        backgroundColor: 'transparent',
+        timeline: {
+          axisType: 'category',
+          autoPlay: true,
+          playInterval: 2000,
+          data: uniqueDates,
+          bottom: 10,
+          label: { formatter: (s) => s.substring(5) },
+          itemStyle: { color: '#004E52' },
+          checkpointStyle: { color: '#F56C6C', borderColor: '#fff' }
+        },
+        tooltip: commonTooltip,
+        geo: commonGeo
+      },
+      options: timelineOptions
+    };
   }
-  // 预留其他图表的坑位...
-  // ==========================================
+}
   // 路由 2.1: Deep Dive 的雷达画像图
   // ==========================================
   else if (props.chartType === 'radar') {
     // chartData 格式: {"military": 4.5, "diplomatic": 3.0, "media": 2.5}
-    const dataObj = props.chartData || { military: 0, diplomatic: 0, media: 0 }
+    const dataObj = props.chartData || { military: 0, diplomatic: 0, media: 0, Technology:0, Scientific:0 }
 
     option = {
-      tooltip: { trigger: 'item' },
+      // 【新增】：添加一个内敛的标题，提升仪表盘的专业感
+      title: {
+        text: 'Multi-dimensional Behavioral Intensity Assessment',
+        left: 'center',
+        top: 0,
+        textStyle: { fontSize: 14, color: '#606266', fontWeight: 'normal' }
+      },
+      tooltip: {
+        trigger: 'item',
+        // 【新增】：定制化 Tooltip，使其更易读
+        formatter: (params) => {
+          return `
+            <div style="font-weight:bold; border-bottom:1px solid #ccc; padding-bottom:5px; margin-bottom:5px;">
+              Comprehensive Intensity Score
+            </div>
+            Military Operations: <span style="font-weight:bold;color:#F56C6C">${params.value[0].toFixed(1)}</span> / 5<br/>
+            Diplomatic Pressure: <span style="font-weight:bold;color:#E6A23C">${params.value[1].toFixed(1)}</span> / 5<br/>
+            Public Opinion Campaigns: <span style="font-weight:bold;color:#409EFF">${params.value[2].toFixed(1)}</span> / 5<br/>
+            Technology: <span style="font-weight:bold;color:#F56C6C">${params.value[3].toFixed(1)}</span> / 5<br/>
+             Scientific Expedition: <span style="font-weight:bold;color:#E6A23C">${params.value[4].toFixed(1)}</span> / 5<br/>
+          `
+        }
+      },
       radar: {
         indicator: [
-          { name: '军事行动 (Military)', max: 5 },
-          { name: '外交施压 (Diplomatic)', max: 5 },
-          { name: '舆论造势 (Media)', max: 5 }
+          { name: 'Military', max: 5 },
+          { name: 'Diplomatic', max: 5 },
+          { name: 'Media', max: 5 },
+          { name: 'Technology', max: 5 },
+          { name: 'Scientific Expedition', max: 5 }
         ],
-        radius: '65%', // 控制雷达图大小
-        axisName: { color: '#606266', fontWeight: 'bold' },
-        splitArea: { areaStyle: { color: ['#f4f4f5', '#ebeef5', '#e4e7ed', '#d3dce6'] } }
+        radius: '60%', // 稍微留出边缘空间给标题
+        center: ['50%', '55%'],
+        axisName: { color: '#303133', fontWeight: 'bold' },
+        // 【优化】：将背景网格调整为渐变感，提升质感
+        splitArea: {
+          areaStyle: {
+            color: ['rgba(245, 108, 108, 0.02)', 'rgba(245, 108, 108, 0.05)', 'rgba(245, 108, 108, 0.1)', 'rgba(245, 108, 108, 0.15)']
+          }
+        }
       },
       series: [{
-        name: '行为烈度画像',
+        name: 'Behavioral Intensity Profile',
         type: 'radar',
         data: [{
           value: [dataObj.military, dataObj.diplomatic, dataObj.media],
-          name: '烈度评分',
-          areaStyle: { color: 'rgba(64, 158, 255, 0.4)' },
-          lineStyle: { color: '#409EFF', width: 2 },
-          itemStyle: { color: '#409EFF' }
+          name: 'Intensity Score',
+          // 【Optimization】: Use warning red color system to represent "intensity", which has more visual impact than blue
+          areaStyle: { color: 'rgba(245, 108, 108, 0.5)' },
+          lineStyle: { color: '#F56C6C', width: 2 },
+          itemStyle: { color: '#F56C6C' }
         }]
       }]
     }
@@ -135,19 +215,11 @@ const renderChart = async () => {
       const res = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json')
       echarts.registerMap('world', await res.json())
     }
-
-    // 映射不同的行为类型到不同颜色 (颜色字典)
-    const colorMap = {
-      'Patrol': '#409EFF', // 蓝色-巡逻
-      'Drill': '#E6A23C',  // 橙色-演习
-      'Conflict': '#F56C6C',// 红色-冲突
-      'Statement': '#909399',// 灰色-声明
-      'Visit': '#67C23A'   // 绿色-访问
-    }
-
+    const colorMap = { 'Patrol': '#409EFF', 'Drill': '#E6A23C', 'Conflict': '#F56C6C', 'Statement': '#909399', 'Visit': '#67C23A' }
     const scatterData = props.chartData.map(item => ({
       name: item.name,
-      value: [item.lon, item.lat, item.type, item.summary, item.date],
+      // 【修改】：将 source_ids 放在数组的第 6 位 (索引 5)
+      value: [item.lon, item.lat, item.type, item.summary, item.date, item.source_ids || []],
       itemStyle: { color: colorMap[item.type] || '#409EFF' }
     }))
 
@@ -155,24 +227,16 @@ const renderChart = async () => {
       tooltip: {
         trigger: 'item',
         formatter: (p) => {
-          const [lon, lat, type, summary, date] = p.value
-          return `<b>${p.name}</b><br/>时间: ${date}<br/>行为: <span style="color:${colorMap[type]}">${type}</span><br/>摘要: ${summary}`
+          const [lon, lat, type, summary, date, source_ids] = p.value
+          let tip = `<b>${p.name}</b><br/>时间: ${date}<br/>行为: <span style="color:${colorMap[type]}">${type}</span><br/>摘要: ${summary}`
+          if (source_ids && source_ids.length > 0) {
+            tip += `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #ebeef5; color:#409EFF; font-size:12px; font-weight:bold;">👆Click the scatter point to view ${source_ids.length} pieces of original intelligence</div>`
+          }
+          return tip
         }
       },
-      geo: {
-        map: 'world', roam: true, zoom: 3, // 微观地图可以默认放大一点
-        center: scatterData.length > 0 ? [scatterData[0].value[0], scatterData[0].value[1]] : null, // 视角居中到第一个事件
-        itemStyle: { areaColor: '#e4e7ed', borderColor: '#ffffff' }
-      },
-      series: [{
-        name: '具体行动',
-        type: 'effectScatter',
-        coordinateSystem: 'geo',
-        data: scatterData,
-        symbolSize: 12,
-        showEffectOn: 'emphasis', // 鼠标悬停时才显示波纹，保持界面清爽
-        rippleEffect: { scale: 4 }
-      }]
+      geo: { map: 'world', roam: true, zoom: 3, center: scatterData.length > 0 ? [scatterData[0].value[0], scatterData[0].value[1]] : null, itemStyle: { areaColor: '#e4e7ed', borderColor: '#ffffff' } },
+      series: [{ name: '具体行动', type: 'effectScatter', coordinateSystem: 'geo', data: scatterData, symbolSize: 12, showEffectOn: 'emphasis', rippleEffect: { scale: 4 } }]
     }
   }
   // ==========================================
@@ -180,62 +244,31 @@ const renderChart = async () => {
   // ==========================================
   else if (props.chartType === 'relation_graph') {
     const { nodes, links } = props.chartData
+    const relationColorMap = { 'Conflict': '#F56C6C', 'Cooperation': '#67C23A', 'Diplomacy': '#E6A23C', 'Trade': '#409EFF', 'Other': '#909399' }
+    const graphNodes = nodes.map(n => ({ name: n.id, symbolSize: 40, itemStyle: { color: '#2a5caa', borderColor: '#fff', borderWidth: 2 }, label: { show: true, position: 'bottom', color: '#303133', fontWeight: 'bold' } }))
 
-    // 预设关系类型颜色字典
-    const relationColorMap = {
-      'Conflict': '#F56C6C',   // 冲突-红色
-      'Cooperation': '#67C23A',// 合作-绿色
-      'Diplomacy': '#E6A23C',  // 外交-橙色
-      'Trade': '#409EFF',      // 贸易-蓝色
-      'Other': '#909399'       // 其他-灰色
-    }
-
-    // 处理节点样式
-    const graphNodes = nodes.map(n => ({
-      name: n.id,
-      symbolSize: 40, // 节点基础大小
-      itemStyle: { color: '#2a5caa', borderColor: '#fff', borderWidth: 2 },
-      label: { show: true, position: 'bottom', color: '#303133', fontWeight: 'bold' }
-    }))
-
-    // 处理连线样式
     const graphLinks = links.map(l => ({
-      source: l.source,
-      target: l.target,
-      value: l.value,
+      source: l.source, target: l.target, value: l.value,
+      source_ids: l.source_ids || [], // 【新增】：保留来源 ID
       label: { show: true, formatter: l.label, fontSize: 10, color: '#666' },
-      lineStyle: {
-        color: relationColorMap[l.type] || '#909399',
-        width: Math.min(Math.max(l.value, 1), 5), // 根据权重控制粗细(1~5px)
-        curveness: 0.2 // 增加曲率，防止双向关系重叠
-      },
-      tooltip: l.tooltip // 绑定悬停详情
+      lineStyle: { color: relationColorMap[l.type] || '#909399', width: Math.min(Math.max(l.value, 1), 5), curveness: 0.2 },
+      tooltip: l.tooltip
     }))
 
     option = {
       tooltip: {
         formatter: (p) => {
           if (p.dataType === 'edge') {
-            // 连线 tooltip：支持换行展示多条细节
-            return `<div style="max-width:250px; white-space:pre-wrap;"><b>${p.data.source} ➔ ${p.data.target}</b><br/><br/>${p.data.tooltip.replace(/\n/g, '<br/>')}</div>`
+            let tip = `<div style="max-width:250px; white-space:pre-wrap;"><b>${p.data.source} ➔ ${p.data.target}</b><br/><br/>${p.data.tooltip.replace(/\n/g, '<br/>')}</div>`
+            if (p.data.source_ids && p.data.source_ids.length > 0) {
+              tip += `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #ebeef5; color:#409EFF; font-size:12px; font-weight:bold;">👆 Click the connection line to view ${p.data.source_ids.length} pieces of original intelligence</div>`
+            }
+            return tip
           }
-          return p.name // 节点 tooltip
+          return p.name
         }
       },
-      series: [{
-        type: 'graph',
-        layout: 'force',
-        data: graphNodes,
-        links: graphLinks,
-        roam: true, // 开启鼠标缩放和漫游
-        edgeSymbol: ['none', 'arrow'], // 线条两端，终点为箭头
-        edgeSymbolSize: [4, 10],
-        force: {
-          repulsion: 800, // 节点间的排斥力，越大越散开
-          edgeLength: [100, 200], // 连线的长度范围
-          gravity: 0.1 // 节点受到的向心力
-        }
-      }]
+      series: [{ type: 'graph', layout: 'force', data: graphNodes, links: graphLinks, roam: true, edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [4, 10], force: { repulsion: 800, edgeLength: [100, 200], gravity: 0.1 } }]
     }
   }
   // ==========================================
@@ -275,43 +308,103 @@ const renderChart = async () => {
     }
   }
 
-  // 渲染并隐藏 Loading
   chartInstance.value.setOption(option, true)
   chartInstance.value.hideLoading()
+
+  // ==========================================
+  // 【最核心】：全局挂载 ECharts 点击事件！
+  // ==========================================
+  chartInstance.value.off('click') // 防止重复绑定
+  chartInstance.value.on('click', (params) => {
+    let sIds = []
+
+    // 如果点击的是地图上的散点 (我们把 source_ids 存在了 value 数组的第 6 位)
+    if (params.seriesType === 'effectScatter' || params.seriesType === 'scatter') {
+      sIds = params.value[5]
+    }
+    // 如果点击的是力导向图的连线
+    else if (params.dataType === 'edge') {
+      sIds = params.data.source_ids
+    }
+
+    // 如果该数据点有来源 ID，唤起右侧抽屉
+    if (sIds && sIds.length > 0) {
+      store.openEvidence(sIds)
+    }
+  })
 }
 
-// 初始化图表实例与监听器
 onMounted(() => {
   chartInstance.value = echarts.init(chartRef.value)
-
-  // 监听容器大小变化，自动重绘图表尺寸
-  resizeObserver = new ResizeObserver(() => {
-    chartInstance.value?.resize()
-  })
+  resizeObserver = new ResizeObserver(() => chartInstance.value?.resize())
   resizeObserver.observe(chartRef.value)
-
   renderChart()
 })
 
-// 监听后端数据的更新（当 LLM 重新生成时，自动触发重绘）
-watch(() => props.chartData, () => {
-  renderChart()
-}, { deep: true })
+watch(() => props.chartData, () => renderChart(), { deep: true })
 
-onUnmounted(() => {
-  if (resizeObserver) resizeObserver.disconnect()
-  chartInstance.value?.dispose()
-})
+watch(viewMode, () => {
+  if (props.chartType === 'global_map') {
+    renderChart(); // 重新执行你上面的 ECharts Option 生成逻辑并 setOption
+  }
+});
+onUnmounted(() => { if (resizeObserver) resizeObserver.disconnect(); chartInstance.value?.dispose() })
 </script>
 
 <template>
-  <div class="echarts-container" ref="chartRef"></div>
-</template>
-
+  <div class="map-controls" v-if="props.chartType === 'global_map' ">
+    <div
+      class="control-btn"
+      :class="{ active: viewMode === 'all' }"
+      @click="viewMode = 'all'"
+    >
+      🗺️ Global Overview
+    </div>
+    <div
+      class="control-btn"
+      :class="{ active: viewMode === 'timeline' }"
+      @click="viewMode = 'timeline'"
+    >
+      ⏱️ Dynamic Evolution
+    </div>
+  </div>
+  <div class="echarts-container" ref="chartRef"></div></template>
 <style scoped>
-.echarts-container {
-  width: 100%;
-  height: 100%;
-  min-height: 300px;
+.echarts-container { width: 100%; height: 100%; min-height: 300px; cursor: pointer; }
+/* 【新增】：控制组件的样式 */
+.map-controls {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  z-index: 10; /* 确保悬浮在 ECharts 画布上方 */
+  display: flex;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  overflow: hidden;
+  border: 1px solid #dcdfe6;
+}
+
+.control-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #606266;
+  user-select: none;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.control-btn:first-child {
+  border-right: 1px solid #dcdfe6;
+}
+
+.control-btn:hover {
+  background-color: #f5f7fa;
+}
+
+.control-btn.active {
+  background-color: #409EFF; /* Element UI 的经典蓝色 */
+  color: #ffffff;
+  font-weight: bold;
 }
 </style>

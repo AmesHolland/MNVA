@@ -27,7 +27,7 @@ async function createSSEConnection(endpoint, payload, callbacks) {
           return;
         }
         const errText = await response.text();
-        throw new FatalError(`请求失败: ${response.status} - ${errText}`);
+        throw new FatalError(`Request Error: ${response.status} - ${errText}`);
       },
 
       onmessage(ev) {
@@ -53,10 +53,10 @@ async function createSSEConnection(endpoint, payload, callbacks) {
     })
   } catch (err) {
     if (err instanceof FatalError || err.name === 'AbortError') {
-      console.log('✅ SSE 连接已按预期安全终止。');
+      console.log('✅ SSE connection terminated safely as expected.');
     } else {
-      console.error('SSE 流异常终止:', err);
-      // 向外抛出以便 store 捕获
+      console.error('SSE stream terminated abnormally:', err);
+      // Throw outward for store to catch
       throw err;
     }
   }

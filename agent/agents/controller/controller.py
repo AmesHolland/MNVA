@@ -12,6 +12,7 @@ from langgraph.graph import add_messages
 from pydantic import BaseModel
 from pydantic import Field
 
+from agent.agents.controller.graph import create_visual_analytics_assistant
 from agent.agents.sub_agent.deep_dive_agent import deep_dive_agent
 from agent.agents.sub_agent.global_monitor_agent import global_monitor_agent
 from agent.agents.sub_agent.relation_miner_agent import relation_miner_agent
@@ -19,6 +20,10 @@ from agent.config.llm_config import llm_qw_quick
 from agent.tools.news_manager import get_news_by_id
 
 from agent.tools.base import safe_parse_json
+
+os.getenv("LANGCHAIN_API_KEY")
+os.getenv("LANGSMITH_ENDPOINT")
+os.getenv("LANGSMITH_TRACING")
 
 # ==================== 对话模型定义 ====================
 model = llm_qw_quick
@@ -124,7 +129,7 @@ class ResearchState(TypedDict):
     # 其他你原有的状态，如搜集到的数据、分析结果等
     analysis_results: Dict[str, Any]
 
-def create_visual_analytics_assistant():
+def create_visual_analytics_assistant_v1():
     """创建研究助手系统"""
 
     # 意图识别
@@ -222,91 +227,6 @@ def create_visual_analytics_assistant():
             "current_phase" : "planning",
              "messages": [AIMessage(content=f"用户意图已经解读完成：{topic}")]
         }
-
-    # 路径规划
-    # def planning_node(state:ResearchState) -> dict:
-    #     """规划研究方向和大纲"""
-    #     print("\n" + "=" * 50)
-    #     print("📋 研究规划阶段...")
-    #
-    #     intent = state["intent"]
-    #
-    #     planning_prompt = f"""
-    #
-    #     用户intent {intent}
-    #
-    #     # Role
-    #     你是一位精通全球地缘政治、海洋安全与海洋资源的资深情报分析及复杂任务规划专家，专门负责编排海洋新闻分析工作流。你将基于对用户意图识别的结果，调用可用的子智能体（Sub-Agents）来构建执行路径。
-    #
-    #     # Available Sub-Agents (工具箱)
-    #     1. **Search-Agent**: 负责获取原始新闻列表。参数: keywords, time_range, count_limit(K值).
-    #     2. **Time-Evolution-Agent**: 负责时序重排与阶段性总结。输入: 新闻列表.
-    #     3. **Topic-Analysis-1-Agent (Hotspot Discovery)**: 识别未知热点与关键词。输入: 新闻列表.
-    #     4. **Topic-Analysis-2-Agent (Hotspot Tracking)**: 针对已知热点进行深度挖掘。输入: 关键词 + 新闻列表.
-    #     5. **Entity-Tracking-Agent**: 追踪特定对象（如船只、国家、组织）的动向演变。参数: entity_name, time_range.
-    #
-    #     # Input Specification
-    #     你将收到来自 Intent_Analyzer 的 JSON 输出，包含 primary_intent, spatial_scope, temporal_scale 等。
-    #
-    #     # Output Format (JSON)
-    #     输出必须是一个逻辑严密的 DAG (有向无环图) 列表：
-    #     {{
-    #       "total_plan_logic": "简述整体执行思路",
-    #       "tasks": [
-    #         {{
-    #           "task_id": 1,
-    #           "agent": "Agent名称",
-    #           "action": "具体操作描述",
-    #           "args": {{ "key-params": "values" }},
-    #           "dependency": null,
-    #         }},
-    #         ...
-    #       ]
-    #     }}
-    #
-    #     # Task Decomposition Strategies Examples
-    #     - **若意图为[热点发现]**: 先执行 Search-Agent 获取大范围数据 -> 再执行 Topic-Analysis-1 提取热点。
-    #     - **若意图为[区域对比]**: 需拆分为并行的两个搜索任务（如区域A vs 区域B）-> 分别进行 Topic-Analysis -> 最后汇总。
-    #     - **若意图为[实体跟踪]**: 直接调用 Entity-Tracking-Agent -> 衔接 Time-Evolution-Agent 做时序总结。
-    #
-    #     # Example
-    #     Input: {{"primary_intent": "实体跟踪", "spatial_scope": ["黄岩岛"], "entity": "中国海警", "temporal_scale": {{"type": "evolution"}}
-    #     Output:
-    #     {{
-    #       "total_plan_logic": "首先检索特定实体在目标海域的新闻，随后按时间线梳理其行动演化趋势。",
-    #       "tasks": [
-    #         {{
-    #           "task_id": 1,
-    #           "agent": "Entity-Tracking-Agent",
-    #           "action": "追踪‘中国海警’在黄岩岛附近的活动新闻",
-    #           "args": {{"entity_name": "中国海警", "location": "黄岩岛", "limit": 20}},
-    #           "dependency": null,
-    #         }},
-    #         {{
-    #           "task_id": 2,
-    #           "agent": "Time-Evolution-Agent",
-    #           "action": "对获取的新闻进行时序梳理和事态演变阶段划分",
-    #           "args": {{"input_from_task": 1}},
-    #           "dependency": 1,
-    #         }}
-    #       ]
-    #     }}
-    #     """
-    #
-    #     response = model.invoke([HumanMessage(content=planning_prompt)])
-    #
-    #     plan = safe_parse_json(response.content)
-    #
-    #     print(f" total_plan_logic: {plan["total_plan_logic"]}")
-    #     for task in plan["tasks"]:
-    #         print(task)
-    #
-    #     return {
-    #         "plan": plan,
-    #         #"research_topic": topic,
-    #         "current_phase": "planning",
-    #         "messages": [AIMessage(content=f"任务编排已经完成：{plan["total_plan_logic"]}")]
-    #     }
 
     def planning_node(state: ResearchState) -> dict:
         """
@@ -448,7 +368,7 @@ def create_visual_analytics_assistant():
         # else:
         #     # 如果用户给出修改意见，则流回 planning 节点重新规划
         #     return { "current_phase": "planning"}
-        {}
+        return {}
 
     # --- 路由逻辑 ---
 
@@ -487,13 +407,14 @@ def create_visual_analytics_assistant():
             # 兼容旧名称（如果有）
             "Search_Agent": search_agent_wrapper
         }
+        news_list = []
 
         for task in tasks:
             task_id = task["task_id"]
             agent_name = task["agent"]
             raw_args = task["args"]
             dependency_ids = task.get("dependency")  # 获取依赖，可能是 int，也可能是 list
-            news_list = []
+
 
             print(f"\n执行任务 [{task_id}]: {agent_name} - {task['action']}")
 
@@ -543,6 +464,11 @@ def create_visual_analytics_assistant():
                 tool_func = agent_mapping[agent_name]
                 try:
                     result = tool_func(execution_args)
+
+                    if agent_name == "Search_Agent":
+                        news_list = result["news_list"]
+
+
                     task_results[task_id] = result
 
                     # 打印摘要
@@ -561,67 +487,9 @@ def create_visual_analytics_assistant():
         return {
             "task_results": task_results,
             "current_phase": "integrating",
+            "news_list":news_list,
             "messages": [AIMessage(content="所有子分析任务已完成，准备进入整合阶段。")]
         }
-
-    def search_agent_tool(args: dict):
-        """
-        Search-Agent 逻辑
-        实现：从 Weaviate 或 API 获取新闻
-        """
-        keywords = args.get("keywords")
-        limit = args.get("count_limit", 10)
-        print(f"   [Tool] 正在检索关键词: {keywords}，数量: {limit}")
-    #
-    #     # 模拟检索过程
-    #     # results = weaviate_client.query.get("MarineNews").with_near_text({"concepts": [keywords]}).with_limit(limit).do()
-    #     mock_news = [
-    #         {"title": f"新闻_{i}", "content": "内容...", "date": "2026-02-01", "location": "南海"}
-    #         for i in range(limit)
-    #     ]
-    #     return mock_news
-    #
-    # def time_evolution_tool(args: dict):
-    #     """
-    #     Time-Evolution-Agent 逻辑
-    #     实现：LLM 对新闻进行时序切片和总结
-    #     """
-    #     news_list = args.get("input_data", [])
-    #     print(f"   [Tool] 正在对 {len(news_list)} 条新闻进行时序分析...")
-    #
-    #     # 调用 LLM 进行总结
-    #     # prompt = f"请将以下新闻按时间线划分阶段：{news_list}"
-    #     # summary = model.invoke(prompt)
-    #
-    #     analysis_result = {
-    #         "timeline": ["阶段1: 冲突爆发", "阶段2: 舆论升级"],
-    #         "summary": "事态呈现螺旋式上升趋势..."
-    #     }
-    #     return analysis_result
-    #
-    # def entity_tracking_tool(args: dict):
-    #     """
-    #     Entity-Tracking-Agent 逻辑
-    #     """
-    #     entity = args.get("entity_name")
-    #     print(f"   [Tool] 正在追踪实体: {entity} 的历史轨迹...")
-    #     return f"关于 {entity} 的动向追踪结果数据"
-    #
-    # def topic_analysis_discovery_tool(args: dict):
-    #     """
-    #     Entity-Tracking-Agent 逻辑
-    #     """
-    #     entity = args.get("entity_name")
-    #     print(f"   [Tool] 正在追踪实体: {entity} 的历史轨迹...")
-    #     return f"关于 {entity} 的动向追踪结果数据"
-    #
-    # def topic_analysis_tracking_tool(args: dict):
-    #     """
-    #     Entity-Tracking-Agent 逻辑
-    #     """
-    #     entity = args.get("entity_name")
-    #     print(f"   [Tool] 正在追踪实体: {entity} 的历史轨迹...")
-    #     return f"关于 {entity} 的动向追踪结果数据"
 
     def global_monitor_agent_wrapper(args: dict) -> dict:
         """
@@ -631,7 +499,7 @@ def create_visual_analytics_assistant():
         query = f"query: {args.get("query")} time_range: {args.get('time_range')}"
         news_list = args.get("input_data")["news_list"]
 
-        result = global_monitor_agent( news_list, query)
+        result = global_monitor_agent(news_list, query)
         # print(result)
         # return result
         # print("global_monitor_agent_wrapper 分析完毕")
@@ -740,8 +608,8 @@ def create_visual_analytics_assistant():
 
         intent = state.get("intent", {})
         raw_results = state.get("task_results", {})
-        evidence_pool = state.get("evidence_pool", {})  # 获取全局新闻字典
-
+        evidence_pool = state.get("news_list", {})  # 获取全局新闻字典
+        print(f"evidence pool: {evidence_pool}")
         # 1. 构造高质量的 LLM 上下文 (Context)
         # 将子 Agent 的 Claims 转换为清晰的文本，暴露 DOC_ID 给 Integrator
         context_blocks = []
@@ -822,100 +690,6 @@ def create_visual_analytics_assistant():
             # 根据你的状态定义调整 Message 格式
         }
 
-    # def integrating_node(state: ResearchState) -> dict:
-    #     """
-    #     整合节点：汇总子Agent的文本结果，生成叙事报告。
-    #     可视化组件的渲染数据假设已在各子Agent中生成并存储，此处仅做ID引用。
-    #     """
-    #     print("\n" + "=" * 50)
-    #     print("📝 进入整合报告阶段 (Integrating Node)...")
-    #
-    #     intent = state.get("intent", {})
-    #     # 过滤掉非文本的大型数据，只保留 task_id, agent_name 和 文本结论/summary
-    #     # 这样可以减少 Token 消耗，避免把 huge raw data 塞给 LLM
-    #     simplified_results = []
-    #
-    #     raw_results = state.get("task_results", {})
-    #
-    #     for task_id, res in raw_results.items():
-    #         # 假设子Agent的结果结构是 {"summary": "...", "viz_data": "...", "raw_data": "..."}
-    #         # 我们只提取 summary 部分给 Integrating Node
-    #         summary_text = res.get("summary") if isinstance(res, dict) else str(res)
-    #         agent_name = res.get("agent_name", "Unknown-Agent") if isinstance(res, dict) else "Task"
-    #
-    #         simplified_results.append({
-    #             "task_id": task_id,
-    #             "agent": agent_name,
-    #             "analysis_text": summary_text
-    #         })
-    #
-    #     # 1. 构造 Prompt
-    #     prompt_content = f"""
-    #     # Role
-    #     你是一名资深的海洋情报主编。你的任务是根据多个子任务的分析片段，撰写一份“海洋态势深度分析报告”。
-    #
-    #     # Context
-    #     用户意图: {json.dumps(intent, ensure_ascii=False)}
-    #
-    #     # Input Data (各子任务的分析结论)
-    #     {json.dumps(simplified_results, ensure_ascii=False, indent=2)}
-    #
-    #     # Output Format (JSON)
-    #     请输出如下 JSON 格式，其中 `ref_task_ids` 字段用于关联已生成的图表：
-    #     {{
-    #       "report_title": "报告标题",
-    #       "executive_summary": "摘要",
-    #       "sections": [
-    #         {{
-    #           "subtitle": "小标题",
-    #           "content": "详细分析...",
-    #           "ref_task_ids": [1]
-    #         }}
-    #       ],
-    #       "conclusion": "结语"
-    #     }}
-    #
-    #     # Constraints
-    #     1. 请仅使用子任务的分析结果进行汇总整理，不要编造或自行搜索相关结果，如果前序的子任务结果不足以支撑完整一份报告，请你如实回答
-    #     """
-    #
-    #     # 2. 调用 LLM
-    #     print("   正在调用 LLM 进行汇总写作...")
-    #     response = model.invoke([HumanMessage(content=prompt_content)])
-    #     # response = {}
-    #     # 3. 解析结果
-    #     try:
-    #         final_report = safe_parse_json(response.content)
-    #         print(f"   ✅ 报告生成成功: {final_report.get('report_title')}")
-    #     except Exception as e:
-    #         print(f"   ❌ 报告解析失败: {e}")
-    #         # Fallback 机制
-    #         final_report = {
-    #             "report_title": "分析报告生成失败",
-    #             "executive_summary": "无法解析 LLM 输出。",
-    #             "sections": [],
-    #             "raw_output": response.content
-    #         }
-    #
-    #
-    #     task_results = state.get("task_results", {})
-    #
-    #     # 构建最终统一的输出负载
-    #     integrated_payload = {
-    #         "report": final_report,  # 包含标题、摘要和各个 section (含 ref_task_ids)
-    #         "tasks": task_results  # 包含所有 Agent 的图表数据、摘要和具体新闻/事件列表
-    #     }
-    #
-    #     # 4. 更新状态
-    #     # 注意：这里我们把生成的 final_report 存入状态
-    #     # 状态流转回 ready (0) 或 finish，等待用户下一次交互
-    #     return {
-    #         "final_report": final_report,
-    #         "analysis_results": integrated_payload,
-    #         "current_phase": "ready",
-    #         "messages": [AIMessage(content=f"报告《{final_report.get('report_title')}》已生成。")]
-    #     }
-
 
     graph = StateGraph(ResearchState)
 
@@ -927,7 +701,7 @@ def create_visual_analytics_assistant():
 
     graph.add_edge(START, "intent" )
     graph.add_edge("intent", "planning")
-    #$graph.add_edge("planning", "analysis")
+    # graph.add_edge("planning", "analysis")
     graph.add_edge("planning", "check")  # planning 结束后走到 check
 
     # 使用条件边决定 check 之后的去向
@@ -949,54 +723,6 @@ def create_visual_analytics_assistant():
     compiled_graph = graph.compile(checkpointer=memory, interrupt_before=["check"])
 
     return compiled_graph
-
-
-# def run_research(topic: str):
-#     """运行研究任务"""
-#     print("\n" + "=" * 60)
-#     print("🔬 启动研究任务")
-#     print("=" * 60)
-#     print(f"研究主题: {topic}")
-#     print(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-#
-#     # 创建研究助手
-#     assistant = create_visual_analytics_assistant()
-#
-#     # 初始状态
-#     initial_state = {
-#         "messages": [HumanMessage(content=f"请对以下主题进行深入研究：{topic}")],
-#         "research_topic": topic,
-#         "research_questions": [],
-#         "intent": [],
-#         "plan": {},
-#         "findings": [],
-#         "task_results": {},
-#         "final_report": "",
-#         "draft_sections": {},
-#         "current_phase":"",
-#         "iteration_count": 0,
-#         "research_list": []
-#     }
-#
-#     # 运行研究流程
-#     config = {"configurable": {"thread_id": f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"}}
-#     result = assistant.invoke(initial_state, config)
-#     # 输出结果
-#     print("\n" + "=" * 60)
-#     print("📄 研究报告")
-#     print("=" * 60)
-#     print(result.get("final_report", "报告生成失败"))
-#
-#     return result
-#
-# if __name__ == '__main__':
-#     topic = "对2025年第四季度美国在深海采矿方面采取的一系列行动"
-#     run_research(topic)
-
-
-
-# 假设这里导入了你的图构建函数
-# from your_module import create_visual_analytics_assistant
 
 def run_research_hitl(topic: str):
     """运行带有 Human-in-the-Loop (HITL) 审批机制的研究任务"""

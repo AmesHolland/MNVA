@@ -28,7 +28,7 @@ const handleKeyDown = (e) => {
       v-model="inputText"
       @keydown="handleKeyDown"
       class="custom-textarea"
-      placeholder="输入指令 (Enter 发送, Shift+Enter 换行)..."
+      placeholder="Enter instructions (Enter to send, Shift+Enter to wrap)..."
       :disabled="store.isGenerating || store.hitlState.isWaiting"
       rows="3"
     ></textarea>
@@ -38,7 +38,7 @@ const handleKeyDown = (e) => {
       @click="handleSend"
       :disabled="!inputText.trim() || store.isGenerating || store.hitlState.isWaiting"
     >
-      发送
+      Send
     </button>
   </div>
 </template>

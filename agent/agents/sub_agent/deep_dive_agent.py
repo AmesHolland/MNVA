@@ -5,7 +5,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
 
-from agent.agents.base import Claim
+from agent.agents.schemas import Claim
 from agent.config.llm_config import llm_qw_quick
 from agent.config.prompt_template import DEEP_DIVE_PROMPT
 from agent.tools.news_manager import get_news_by_id
@@ -19,30 +19,37 @@ class IntensityScore(BaseModel):
     military: int = Field(description="0-5 score: Military aggression or hardware involvement.")
     diplomatic: int = Field(description="0-5 score: Diplomatic pressure or formal statements.")
     media: int = Field(description="0-5 score: Public attention or propaganda intensity.")
+    Technology: int = Field(description="0-5 score: Technology Development.")
+    Scientific: int = Field(description="0-5 score: Scientific Expedition Activity.")
 
 
 # 2. 单个事件节点 (已增加溯源字段)
 class EventNode(BaseModel):
-    date: str = Field(description="Event date in YYYY-MM-DD format.")
+    start_date: str = Field(description="Event start date in YYYY-MM-DD format.")
+    end_date: str = Field(description="Event end date in YYYY-MM-DD format. If it's a single-day event, this should be the same as start_date.")
     location_name: str = Field(description="Specific location name or region name.")
     geo_lat: Optional[float] = Field(description="Latitude of the location, if inferable. Otherwise null.")
     geo_lon: Optional[float] = Field(description="Longitude of the location, if inferable. Otherwise null.")
     action_type: str = Field(description="Category: 'Patrol', 'Drill', 'Statement', 'Conflict', 'Visit'.")
     summary: str = Field(description="Concise summary of the action (max 10 words).")
     scores: IntensityScore = Field(description="Intensity assessment of this specific event.")
-
-    # 【核心新增】：证据追踪字段
     source_ids: List[str] = Field(description="List of exact DOC_IDs from the input text that describe this event.")
 
+# 3. 时空演变阶段 (用于前端渲染垂直时间轴组件)
+class EvolutionPhase(BaseModel):
+    phase_name: str = Field(description="Name of the evolutionary phase (e.g., 'Incubation', 'Escalation', 'De-escalation').")
+    start_date: str = Field(description="Start date of this phase in YYYY-MM-DD format.")
+    end_date: str = Field(description="End date of this phase in YYYY-MM-DD format.")
+    phase_summary: str = Field(description="Narrative summary of the entity's strategy or situation during this phase.")
+    source_ids: List[str] = Field(description="List of DOC_IDs supporting this phase.")
 
-# 3. 完整输出结构
+# 4. 完整输出结构 (加入 evolution_phases)
 class DeepDiveOutput(BaseModel):
     entity_name: str = Field(description="The normalized name of the target entity.")
     entity_type: str = Field(description="Type: 'Vessel', 'Country', 'Organization', or 'Event'.")
-    # overall_assessment: str = Field(description="A strategic summary of the entity's behavior (approx. 50 words).")
     overview_claims: List[Claim] = Field(description="Strategic summary of the entity's behavior broken down into traceable claims.")
-    events: List[EventNode] = Field(description="Chronological list of events associated with the entity.")
-
+    evolution_phases: List[EvolutionPhase] = Field(description="Chronological phases telling the story of the entity's spatiotemporal evolution.")
+    events: List[EventNode] = Field(description="Chronological list of discrete events associated with the entity.")
 
 # --- 初始化组件 (通常在 graph 构建前完成) ---
 llm = llm_qw_quick
@@ -50,7 +57,8 @@ parser = JsonOutputParser(pydantic_object=DeepDiveOutput)
 
 prompt = PromptTemplate(
     template=DEEP_DIVE_PROMPT,
-    input_variables=["target_entity", "news_context"],
+    # 【新增】：在 input_variables 中加入 blueprint_context 和 query
+    input_variables=["target_entity", "news_context", "query", "blueprint_context"],
     partial_variables={"format_instructions": parser.get_format_instructions()}
 )
 
@@ -58,93 +66,87 @@ deep_dive_chain = prompt | llm | parser
 
 
 # --- 核心节点函数 ---
-def deep_dive_agent(entity, query, docs):
+def deep_dive_agent(entity, query, docs, blueprint_context=""):
     """
-    LangGraph Node: Performs deep dive analysis on a specific entity.
-    Expected State: {'target_entity': str, 'retrieved_docs': list}
+    LangGraph Node: Performs deep dive analysis on a specific entity to extract its spatiotemporal storyline.
     """
-    print(f"--- DEEP DIVE AGENT: Analyzing {entity} ---")
+    print(f"\n--- 🔎 DEEP DIVE AGENT: Analyzing Spatiotemporal Evolution for {entity} ---")
 
-    # 1. 准备上下文
-    #entity = state.get("target_entity", "Unknown Entity")
-    # docs = state.get("retrieved_docs", [])
-
-    # 简单的 Context 格式化
-    news_context = "\n".join([f"[{d.get("DOC_ID")}]- [{d.get('publish_date', 'N/A')}] {d.get('content', '')}" for d in docs])
+    # 1. 严格格式化上下文，确保 DOC_ID 可见
+    news_context = "\n".join(
+        [f"[DOC_ID: {d.get('DOC_ID')}] - [{d.get('publish_date', 'N/A')}] {d.get('content', '')}" for d in docs])
 
     # 2. 执行 LLM Chain
-    # 返回的是符合 DeepDiveOutput 结构的 Dict
     try:
         structured_result = deep_dive_chain.invoke({
             "target_entity": entity,
             "news_context": news_context,
-            "query" : query
+            "query": query,
+            "blueprint_context": blueprint_context  # 【新增】：注入蓝图
         })
     except Exception as e:
-        # 错误处理：返回空数据或错误提示，防止整个 Graph 崩溃
+        print(f"❌ Deep Dive 运行出错: {e}")
         return {"final_answer": f"Analysis failed: {str(e)}"}
-
-    # 3. 内部数据处理 (In-Node Processing)
-    # 我们在这里直接把 LLM 的结果转化为前端 Visualization 组件需要的格式
-    # 这样前端 Vue 只需要“傻瓜式”渲染
 
     events = structured_result.get("events", [])
 
-    # --- A. 计算雷达图数据 (Radar Data Aggregation) ---
-    # 必须在这里算，LLM 算平均值容易出错
+    # --- A. 计算雷达图数据 ---
     radar_data = {"military": 0, "diplomatic": 0, "media": 0}
     if events:
         df = pd.DataFrame([e['scores'] for e in events])
-        # 计算平均分并保留 1 位小数
         radar_data = df.mean().round(1).to_dict()
 
-    # --- B. 组装 Vega-Lite 友好的数据 ---
-    # Map Data: 只保留有坐标的点，或者前端处理空值
+    # --- B. 组装 Vega-Lite / ECharts 友好的数据 ---
+    # 【修改】：注入 intensity (用于地图散点大小) 和 source_ids (用于点击溯源)
     map_data = [
         {
-            "date": e['date'],
+            "date": e['start_date'],
             "lat": e['geo_lat'],
             "lon": e['geo_lon'],
             "name": e['location_name'],
             "type": e['action_type'],
-            "summary": e['summary']
+            "summary": e['summary'],
+            "intensity": e['scores']['military'],  # 默认用军事烈度决定点的大小
+            "source_ids": e['source_ids']
         }
         for e in events if e.get('geo_lat') and e.get('geo_lon')
     ]
 
-    # Gantt Data: 简单的转换
+    # 【修改】：注入 source_ids
     gantt_data = [
         {
-            "x": e['date'],  # Time
-            "y": e['action_type'],  # Category
-            "color": e['scores']['military'],  # Color by intensity
-            "tooltip": e['summary']
+            "start": e['start_date'],  # 开始时间
+            "end": e['end_date'],  # 结束时间
+            "category": e['action_type'],  # Y轴分类
+            "intensity": e['scores']['military'],  # 烈度（用于颜色深浅）
+            "summary": e['summary'],
+            "source_ids": e['source_ids']
         }
         for e in events
     ]
 
-    # 4. 更新 State
+    # 3. 更新 State
     return {
-        # 文本回复
+        # 文本回复 (前端可将 overview_claims 渲染为气泡，将 evolution_phases 渲染为垂直时间轴)
         "final_answer": structured_result['overview_claims'],
-
         # 结构化可视化数据
         "visualization_data": {
-            "type": "deep_dive_dashboard",  # 告诉前端用哪个面板渲染
+            "type": "deep_dive_dashboard",
+            "evolution_timeline": structured_result['evolution_phases'],  # 【新增】：叙事线数据流向前端
             "entity_info": {
                 "name": structured_result['entity_name'],
                 "type": structured_result['entity_type']
             },
             "radar_chart": radar_data,
-            "map_chart": map_data,
+            "map_chart": map_data,  # 前端 ECharts 可以复用 global_map 的 timeline 逻辑！
             "gantt_chart": gantt_data,
-            "raw_events": events  # 保留原始数据供通过表格查看
+            "raw_events": events
         },
-        "structured_insight" : structured_result
+        "structured_insight": structured_result
     }
 
 if __name__ == '__main__':
-    query = "对2025年第四季度美国在深海采矿方面采取的一系列行动"
+    query = "对2025年第四季度美国在深海采矿方面采取的一系列行动 time-range:2025-10-08 to 2025-12-31"
     news_list = get_news_by_id([])
-    result = deep_dive_agent("美国", query, news_list)
+    result = deep_dive_agent("美国", query, news_list, "美国从10月激进部署与规则博弈，转向12月因挪威暂停及国际压力而陷入治理僵局。")
     print(result)

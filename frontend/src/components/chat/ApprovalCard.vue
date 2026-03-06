@@ -21,7 +21,7 @@ const handleApprove = () => {
 
 const handleReject = () => {
   if (!localFeedback.value.trim()) {
-    alert('请输入修改意见')
+    alert('Enter revision feedback')
     return
   }
   // 发送修改意见
@@ -32,12 +32,12 @@ const handleReject = () => {
 <template>
   <div v-if="store.hitlState.isWaiting && store.hitlState.plan" class="approval-card">
     <div class="card-header">
-      <span class="icon">🍎</span> 任务分解与规划 (Task Decomposition)
+      <span class="icon">🍎</span> Task Decomposition
     </div>
 
     <div class="card-body">
       <div class="plan-summary">
-        <strong>规划思路:</strong>
+        <strong>Plan Logic:</strong>
         <p>{{ store.hitlState.plan.total_plan_logic }}</p>
       </div>
 
@@ -56,7 +56,7 @@ const handleReject = () => {
             <div class="task-agent">
               <span class="agent-badge">{{ task.agent.replace('_Agent', '') }}</span>
               <span v-if="task.dependency" class="dependency-text">
-                (依赖 Task: {{ task.dependency }})
+                (Dependency Task: {{ task.dependency }})
               </span>
             </div>
             <div class="task-action">{{ task.action }}</div>
@@ -79,20 +79,20 @@ const handleReject = () => {
 
     <div class="card-actions">
       <template v-if="!editMode">
-        <button class="btn btn-primary" @click="handleApprove">Run (同意执行)</button>
-        <button class="btn btn-text" @click="editMode = true">Deny (修改参数)</button>
+        <button class="btn btn-primary" @click="handleApprove">Run </button>
+        <button class="btn btn-text" @click="editMode = true">Deny </button>
       </template>
 
       <template v-else>
         <textarea
           v-model="localFeedback"
-          placeholder="请输入干预指令，例如：'去除对NOAA的分析，增加对美国海军的追踪'..."
+          placeholder="Please enter intervention instructions, e.g.: 'Remove the analysis of NOAA and add tracking of the U.S. Navy'..."
           class="feedback-input"
           rows="3"
         ></textarea>
         <div class="edit-actions">
-          <button class="btn btn-primary" @click="handleReject">提交重划</button>
-          <button class="btn btn-text" @click="editMode = false">取消</button>
+            <button class="btn btn-primary" @click="handleReject">Submit Replan</button>
+            <button class="btn btn-text" @click="editMode = false">Cancel</button>
         </div>
       </template>
     </div>

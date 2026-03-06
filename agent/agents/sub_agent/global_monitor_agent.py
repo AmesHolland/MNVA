@@ -2,7 +2,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 
-from agent.agents.base import Claim
+from agent.agents.schemas import Claim
 from agent.config.llm_config import llm_qw_quick
 from agent.config.prompt_template import GLOBAL_MONITOR_PROMPT
 from typing import List, Optional
@@ -13,35 +13,31 @@ from agent.tools.news_manager import get_news_by_id
 from pydantic import BaseModel, Field
 from typing import List
 
-# 1. 带有溯源的主题模型
 class TopicNode(BaseModel):
-    topic_name: str = Field(description="Name of the clustered topic")
+    topic_name: str = Field(description="Name of the clustered topic (e.g., 'Naval Drills', 'Fishery Disputes')")
     description: str = Field(description="A brief 1-sentence explanation of this topic")
+    temporal_pattern: str = Field(description="Describe how this topic shifted over time (e.g., 'Continuous low-level reports', 'Sudden burst around mid-month').")
     source_ids: List[str] = Field(description="List of DOC_IDs that belong to this topic")
 
-# 2. 带有溯源的地理坐标点
 class GeoPoint(BaseModel):
+    date: str = Field(description="Strict YYYY-MM-DD when this specific event occurred at this location")
     lat: float = Field(description="Latitude of the event location")
     lon: float = Field(description="Longitude of the event location")
     topic_name: str = Field(description="Name of the topic this location belongs to")
-    intensity: int = Field(description="Number of related news articles for this location")
+    intensity: int = Field(description="Number of related news articles for this location (1-5 scale)")
     summary: str = Field(description="Short summary for the map tooltip")
     source_ids: List[str] = Field(description="List of DOC_IDs that support this geographic event")
 
-# 3. 带有溯源的趋势时间点
 class TimePoint(BaseModel):
     date: str = Field(description="Date in YYYY-MM-DD format")
     topic_name: str = Field(description="Name of the topic")
     count: int = Field(description="Number of articles for this topic on this date")
     source_ids: List[str] = Field(description="List of DOC_IDs published on this date for this topic")
 
-# 4. 完整的输出模型
 class GlobalMonitorOutput(BaseModel):
-    # overview_summary: str = Field(description="A 100-word macro summary of the overall situation.")
     overview_claims: List[Claim] = Field(description="A macro summary broken down into traceable claims.")
-    overview_source_ids: List[str] = Field(description="List of all DOC_IDs used to write the overview summary.")
-    topics: List[TopicNode] = Field(description="List of top 3-5 identified topics with their sources.")
-    geo_data: List[GeoPoint] = Field(description="Data for rendering the map.")
+    topics: List[TopicNode] = Field(description="List of top 3-5 identified topics with their temporal patterns.")
+    geo_data: List[GeoPoint] = Field(description="Data for rendering the dynamic map with time sliders.")
     trend_data: List[TimePoint] = Field(description="Data for rendering the ThemeRiver/AreaChart.")
 
 # 1. 初始化 LLM
@@ -61,41 +57,61 @@ global_monitor_chain = prompt | llm | parser
 
 
 # 4. 定义 LangGraph 节点函数
-def global_monitor_agent(docs, query):
+def global_monitor_agent(docs, query, blueprint_context=""):
     """
-    State dict should contain: 'query', 'retrieved_docs' (list of strings/dicts)
+    LangGraph Node: Extracts macro spatiotemporal shifts and topics.
+    Expected State Input:
+    - query: str
+    - retrieved_docs: List[dict] (e.g., [{"DOC_ID": "123", "publish_date": "2026-01-01", "content": "..."}])
     """
-    print("--- GLOBAL MONITOR AGENT: Analyzing... ---")
+    print("\n--- 🌐 GLOBAL MONITOR AGENT: Analyzing Macro Spatiotemporal Shifts ---")
 
-    # 获取上一步(Retrieval Tool) 检索到的新闻
-    # docs = state.get("retrieved_docs", [])
     # query = state.get("query", "")
+    # docs = state.get("retrieved_docs", [])
 
-    # 格式化上下文 (将文档列表转为字符串)
-    news_context = "\n".join([f"[{d.get("DOC_ID")}]- [{d['publish_date']}] {d['content']}" for d in docs])
+    # 1. 严格格式化上下文，确保 DOC_ID 醒目可见
+    formatted_docs = []
+    for d in docs:
+        doc_id = d.get('DOC_ID', 'UNKNOWN')
+        date = d.get('publish_date', 'UNKNOWN_DATE')
+        content = d.get('content', '')
+        formatted_docs.append(f"[DOC_ID: {doc_id}] - [{date}] {content}")
 
-    # 执行 Chain
-    result = global_monitor_chain.invoke({
-        "query": query,
-        "news_context": news_context
-    })
+    news_context = "\n".join(formatted_docs)
 
-    # 更新 State
-    # 这里我们把生成的 visualization_data 存入 state，方便后续传递给前端
+    # 2. 调用大模型
+    try:
+        result = global_monitor_chain.invoke({
+            "query": query,
+            "news_context": news_context,
+            "blueprint_context": blueprint_context  # 注入 Prompt
+        })
+    except Exception as e:
+        print(f"❌ Global Monitor 运行出错: {e}")
+        # 返回友好的错误状态，避免整个图崩溃
+        return {"error": f"Global Monitor execution failed: {str(e)}"}
+
+    print("✅ 分析完成，已生成带溯源的宏观态势数据。")
+
+    # 3. 组装 State 更新字典
+    # 这里的结构高度适配你在 Vue 前端的四视图布局
     return {
         "final_answer": result['overview_claims'],
-        "topics_list": result['topics_list'],
+        "topics_list": result['topics'],
         "visualization_data": {
-            "geo": result['geo_data'],
-            "trend": result['trend_data']
+            "view_type": "global_monitor",
+            "geo_dynamic_data": result.get("geo_data", []),  # 供带时间滑块的地图使用
+            "trend_river_data": result.get("trend_data", [])  # 供主题河流图使用
         },
-        "structured_insight": result  # 保留完整结构化数据
+
+        # 保留原始解析结果以备他用
+        "structured_insight": result
     }
 
 if __name__ == '__main__':
-    query = "对2025年第四季度全球海洋相关公开信源进行多维聚类与热力分析，识别高频、持续发酵、具政策转折意义的跨区域共性热点主题，覆盖五大本体维度"
+    query = "US deep-sea mining strategic initiatives and international regulatory responses 2025-10-08 to 2025-12-31"
     news_list = get_news_by_id([])
-    result = global_monitor_agent(news_list, query)
+    result = global_monitor_agent(news_list, query, "美国从10月激进部署与规则博弈，转向12月因挪威暂停及国际压力而陷入治理僵局。")
     print(result)
 
 # def global_monitor_node(state):

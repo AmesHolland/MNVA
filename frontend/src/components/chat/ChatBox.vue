@@ -21,7 +21,7 @@ watch(() => store.messages.length, async () => {
       :key="msg.id"
       :class="['message-wrapper', msg.role === 'user' ? 'is-user' : 'is-ai']"
     >
-      <div class="avatar">{{ msg.role === 'user' ? '我' : 'AI' }}</div>
+      <div class="avatar">{{ msg.role === 'user' ? 'User' : 'AI' }}</div>
 
       <div class="message-content">
         {{ msg.content }}

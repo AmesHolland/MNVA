@@ -10,6 +10,7 @@ import TraceableText from '../components/visualizations/TraceableText.vue'
 import EvidenceDrawer from '../components/visualizations/EvidenceDrawer.vue'
 // 引入图表分发组件 (记得确保你有这个组件，或者把代码平铺进来)
 import ChartRenderer from '../components/visualizations/ChartRender.vue'
+import SpatiotemporalNavigator from "../components/visualizations/SpatiotemporalNavigator.vue";
 
 const store = useChatStore()
 
@@ -46,7 +47,7 @@ const allUniqueTasks = computed(() => {
 
     <aside class="left-panel">
       <header class="panel-header">
-        <h2>海洋新闻态势感知</h2>
+        <h2>Marine News</h2>
         <span class="subtitle">Multi-Agent Visual Analytics</span>
       </header>
       <main class="chat-stream">
@@ -71,16 +72,16 @@ const allUniqueTasks = computed(() => {
             <button
               :class="['toggle-btn', { active: viewMode === 'split' }]"
               @click="viewMode = 'split'"
-              title="左右分栏：左侧阅读，右侧看图"
+              title="Split view: Left (text) / Right (charts)"
             >
-              <span class="icon">◫</span> 仪表盘模式
+              <span class="icon">◫</span> Dashboard
             </button>
             <button
               :class="['toggle-btn', { active: viewMode === 'narrative' }]"
               @click="viewMode = 'narrative'"
-              title="瀑布流：图文穿插阅读"
+              title="Stream view: Text & images interleaved"
             >
-              <span class="icon">📄</span> 叙事模式
+              <span class="icon">📄</span> Narrative
             </button>
           </div>
         </header>
@@ -89,32 +90,8 @@ const allUniqueTasks = computed(() => {
 
           <div class="split-text-pane">
             <div class="executive-summary-card">
-              <strong>摘要：</strong>{{ store.analysisResults.report.executive_summary }}
+              <strong>Abstract：</strong>{{ store.analysisResults.report.executive_summary }}
             </div>
-
-<!--            <article-->
-<!--              v-for="(section, index) in store.analysisResults.report.sections"-->
-<!--              :key="'text-'+index"-->
-<!--              class="text-section"-->
-<!--            >-->
-<!--              <h2 class="section-subtitle">{{ index + 1 }}. {{ section.subtitle }}</h2>-->
-
-<!--              <div class="section-content">-->
-<!--                <p v-for="(paragraph, pIdx) in section.content.split('\n')" :key="'p-'+pIdx">-->
-<!--                  {{ paragraph }}-->
-<!--                </p>-->
-<!--              </div>-->
-
-<!--              <div class="agent-summaries-box">-->
-<!--                <h4 class="agent-summary-title">底层研判支撑：</h4>-->
-<!--                <template v-for="taskId in section.ref_task_ids" :key="'sum-'+taskId">-->
-<!--                  <div class="agent-summary-item" v-if="store.analysisResults.tasks[taskId]">-->
-<!--&lt;!&ndash;                    <span class="agent-badge">{{ store.analysisResults.tasks[taskId].agent_name.replace('_Agent', '') }}</span>&ndash;&gt;-->
-<!--                    <span class="agent-text">{{ store.analysisResults.tasks[taskId].summary }}</span>-->
-<!--                  </div>-->
-<!--                </template>-->
-<!--              </div>-->
-<!--            </article>-->
           <article v-for="(section, index) in store.analysisResults.report.sections" :key="'text-'+index" class="text-section">
             <h2 class="section-subtitle">{{ index + 1 }}. {{ section.subtitle }}</h2>
 
@@ -123,7 +100,7 @@ const allUniqueTasks = computed(() => {
             </div>
           </article>
             <div class="conclusion-box">
-              <h3>战略结语</h3>
+              <h3>Conclusion</h3>
               <p>{{ store.analysisResults.report.conclusion }}</p>
             </div>
           </div>
@@ -149,12 +126,6 @@ const allUniqueTasks = computed(() => {
               :key="'nar-'+index"
               class="doc-section"
             >
-<!--              <div class="section-text-block">-->
-<!--                <h2 class="section-subtitle"><span class="section-index">{{ index + 1 }}</span>{{ section.subtitle }}</h2>-->
-<!--                <div class="section-paragraphs">-->
-<!--                  <p v-for="(paragraph, pIdx) in section.content.split('\n')" :key="pIdx">{{ paragraph }}</p>-->
-<!--                </div>-->
-<!--              </div>-->
             <div class="section-text-block">
                 <h2 class="section-subtitle"><span class="section-index">{{ index + 1 }}</span>{{ section.subtitle }}</h2>
                 <div class="section-paragraphs">
@@ -169,7 +140,7 @@ const allUniqueTasks = computed(() => {
             </article>
 
             <div class="doc-conclusion">
-              <h3>战略结语</h3>
+              <h3>Conclusion</h3>
               <p>{{ store.analysisResults.report.conclusion }}</p>
             </div>
           </div>
@@ -179,10 +150,11 @@ const allUniqueTasks = computed(() => {
 
       <template v-else>
       </template>
-
+      <SpatiotemporalNavigator class="spatiotemporal-float" />
     </section>
 
     <EvidenceDrawer />
+
   </div>
 </template>
 
@@ -197,7 +169,15 @@ const allUniqueTasks = computed(() => {
 .input-area { padding: 15px; background-color: #ffffff; border-top: 1px solid #ebeef5; }
 
 /* 右侧顶部工具栏 */
-.right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background-color: #f5f7fa; }
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: #f5f7fa;
+  position: relative; /* 🔴 让子元素绝对定位基于此容器 */
+  padding-bottom: 180px; /* 🔴 预留悬浮组件高度（根据实际调整） */
+}
 .top-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   padding: 15px 30px; background-color: #ffffff; border-bottom: 1px solid #e4e7ed;
@@ -249,6 +229,20 @@ const allUniqueTasks = computed(() => {
 }
 
 .conclusion-box { background: #f0f9eb; padding: 20px; border-radius: 6px; color: #67C23A; border-left: 4px solid #67C23A; margin-top: 40px;}
+
+.spatiotemporal-float {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 10; /* 确保悬浮在内容上方 */
+  margin: 0; /* 清除原有margin */
+  border-radius: 8px 8px 0 0; /* 底部圆角取消，贴合面板底部 */
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.03); /* 阴影向上，更贴合悬浮效果 */
+}
 
 /* ================== 模式 B: Narrative Layout (瀑布流) ================== */
 .narrative-layout { flex: 1; overflow-y: auto; scroll-behavior: smooth; }

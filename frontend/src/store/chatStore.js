@@ -9,7 +9,7 @@ export const useChatStore = defineStore('chat', () => {
   const sessionId = ref('session_' + Date.now())
 
   const messages = ref([
-    { id: 1, role: 'ai', content: '您好！后端连接已就绪。请输入您想探索的事件或实体。' }
+    { id: 1, role: 'ai', content: 'Hello! The system is ready. Please enter the event or entity you want to explore.' }
   ])
 
   const isGenerating = ref(false)
@@ -21,8 +21,8 @@ export const useChatStore = defineStore('chat', () => {
   // 新增：用于存放最终传给可视化组件（右侧面板）的数据
   const analysisResults = ref({
     insight: {
-      title: "等待数据...",
-      summary: "请在左侧发起查询...",
+      title: "Waiting for data...",
+      summary: "Please initiate a query on the left side...",
       keywords: []
     },
     visualizations: []
@@ -73,7 +73,7 @@ export const useChatStore = defineStore('chat', () => {
       // 当 Agent 正在不同节点间流转时，追加状态到最后一条 AI 消息中
       const lastMsg = messages.value[messages.value.length - 1]
       if (lastMsg && lastMsg.role === 'ai') {
-        lastMsg.content += `\n> 正在执行阶段: ${data.node}...`
+        lastMsg.content += `\n> ${data.node}...`
       }
     }
     else if (eventName === 'interrupt') {
@@ -88,19 +88,33 @@ export const useChatStore = defineStore('chat', () => {
       // 流程全部跑完
       isGenerating.value = false
       // 可以暂时塞进 store 里用于测试 analysisResults.value = data.results // 将结果存入 store 供右侧图表监听
-      analysisResults.value = data.results
-      messages.value.push({
-        id: Date.now(),
-        role: 'ai',
-        content: '分析已完成！请查看右侧的可视化面板与洞察结果。'
-      })
+      // ====== 【修改部分开始】 ======
+      const isNewVisualResult = data.is_new_visual_result;
+
+      if (isNewVisualResult) {
+        // Slow branch: A complete in-depth analysis was run in this round, update the charts on the right
+        analysisResults.value = data.results
+        messages.value.push({
+          id: Date.now(),
+          role: 'ai',
+          content: 'Analysis completed! Please check the visualization panel and insight results on the right side.'
+        })
+      } else {
+        // Fast branch: Only casual Q&A in this round
+        // 【Key point】: Do not touch analysisResults.value at all here, so the original visualization charts on the right will be perfectly preserved!
+        messages.value.push({
+          id: Date.now(),
+          role: 'ai',
+          content: data.direct_answer || 'Answer completed.'
+        })
+      }
     }
     else if (eventName === 'error') {
       isGenerating.value = false
       messages.value.push({
         id: Date.now(),
         role: 'ai',
-        content: `【系统错误】: ${data.error}`
+        content: `【System Error】: ${data.error}`
       })
     }
   }
@@ -113,8 +127,7 @@ export const useChatStore = defineStore('chat', () => {
     isGenerating.value = true
 
     // 预置一条空 AI 消息，用于承载后续的 node_progress 状态更新
-    messages.value.push({ id: Date.now() + 1, role: 'ai', content: '收到请求，系统正在编排...\n' })
-
+    messages.value.push({ id: Date.now() + 1, role: 'ai', content: 'Request received, the system is orchestrating...\n' })
     try {
       await streamChat({
         user_id: userId.value,
@@ -128,12 +141,12 @@ export const useChatStore = defineStore('chat', () => {
         }
       })
     } catch (error) {
-      console.error('请求发起失败', error)
+      console.error('Failed to initiate request', error)
       isGenerating.value = false
     }
   }
 
-  // 发送用户的审批决定
+  // Send user's approval decision
   const sendFeedback = async (feedbackText) => {
     hitlState.value.isWaiting = false
 
@@ -141,11 +154,11 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push({
       id: Date.now(),
       role: 'user',
-      content: isApprove ? '【系统提示】确认执行上述计划。' : `【修改意见】${feedbackText}`
+      content: isApprove ? '【System Prompt】Confirm execution of the above plan.' : `【Modification Suggestions】${feedbackText}`
     })
 
     isGenerating.value = true
-    messages.value.push({ id: Date.now() + 1, role: 'ai', content: '收到反馈，正在继续执行分析...\n' })
+    messages.value.push({ id: Date.now() + 1, role: 'ai', content: 'Feedback received, continuing analysis...\n' })
 
     try {
       await streamFeedback({
@@ -160,11 +173,10 @@ export const useChatStore = defineStore('chat', () => {
         }
       })
     } catch (error) {
-      console.error('反馈发送失败', error)
+      console.error('Failed to send feedback', error)
       isGenerating.value = false
     }
   }
 
   return { sessionId, messages, isGenerating, hitlState, analysisResults, sendMessage, sendFeedback, evidenceState, openEvidence, closeEvidence }
 })
-

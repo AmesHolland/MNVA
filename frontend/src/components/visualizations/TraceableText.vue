@@ -26,9 +26,9 @@ const store = useChatStore()
         v-if="claim.source_ids && claim.source_ids.length > 0"
         class="citation-badge"
         @click.stop="store.openEvidence(claim.source_ids)"
-        title="点击查看原始证据"
+        title="Click to view original evidence"
       >
-        [{{ claim.source_ids.length }} 来源]
+        [{{ claim.source_ids.length }} source]
       </sup>
     </span>
   </div>
