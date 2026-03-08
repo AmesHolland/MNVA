@@ -18,6 +18,16 @@ model = llm_qw_quick
 
 def intent_node(state: ResearchState) -> dict:
     print("\n" + "=" * 50 + "\n 用户意图识别阶段...")
+    
+    # 检查 state 中是否已经有预设的 intent (来自沙盒请求)
+    if state.get("intent") and state.get("intent").get("is_sandbox_request"):
+        print("   沙盒请求，跳过意图识别。")
+        return {
+            "intent": state.get("intent"),
+            "current_phase": "planning",
+            "messages": [AIMessage(content=f"接收到沙盒分析请求，准备进行局部下钻...")]
+        }
+
     topic = state["research_topic"]
     intent_prompt = get_intent_prompt(topic)
 
@@ -37,6 +47,10 @@ def intent_node(state: ResearchState) -> dict:
 
 def route_after_intent(state: ResearchState) -> str:
     """根据意图复杂度进行双轨路由"""
+    # 如果是沙盒请求，直接进入深度分析
+    if state.get("intent", {}).get("is_sandbox_request"):
+        return "data_retrieval"
+        
     complexity = state.get("intent", {}).get("task_complexity", "deep_research")
     if complexity == "simple_qa":
         return "simple_chat"
@@ -47,27 +61,41 @@ def simple_chat_node(state: ResearchState) -> dict:
     """快分支：处理基础问答、闲聊或简单解释"""
     print("\n" + "=" * 50 + "\n💬 进入轻量级问答分支 (Fast Track)...")
     topic = state["research_topic"]
-
-    # 直接调用 LLM 回答，或者结合少量历史信息
-    prompt = f"你是一个海洋态势感知系统的智能助手。请简明扼要地回答用户的问题：{topic}"
+    
+    # 获取历史消息
+    history = state.get("messages", [])
+    
+    # 构造包含历史的 prompt
+    prompt_messages = []
+    for msg in history:
+        if isinstance(msg, HumanMessage):
+            prompt_messages.append(f"User: {msg.content}")
+        elif isinstance(msg, AIMessage):
+            prompt_messages.append(f"AI: {msg.content}")
+    
+    prompt = f"你是一个海洋态势感知系统的智能助手。请根据以下对话历史，简明扼要地回答用户的最新问题。\n\n对话历史:\n{''.join(prompt_messages)}\n\n最新问题: {topic}"
+    
     response = model.invoke([HumanMessage(content=prompt)])
 
     return {
         "current_phase": "ready",
-        "final_report": response.content,  # 可以复用这个字段，前端判断如果有 report 则直接展示
+        "final_report": response.content,
         "messages": [AIMessage(content=response.content)]
     }
 
-def data_retrieval_node(state: ResearchState) -> dict:
-    """前置检索：根据用户意图，去数据库捞取基础数据池"""
-    print("\n" + "=" * 50 + "\n 捞取基础数据 (Data Retrieval)...")
+def data_retrieval_node(state: dict):
+    intent = state.get("intent", {})
     query = state.get("research_topic")
-
-    # 这里的底层逻辑就是你原来 Search_Agent 的逻辑
-    # 获取初步的 20-30 条新闻
-    news_list = get_news_by_id(query)
-
-    return {"news_list": news_list}
+    if intent.get("is_sandbox_request"):
+        constraints = intent.get("sandbox_constraints", {})
+        # 【沙盒模式】：执行 SQL 或向量库的硬过滤 (Hard Filter)
+        # news_list = strict_filter_db(constraints['start_time'], constraints['end_time'], constraints['spatial_labels'])
+        news_list = get_news_by_id(query)
+    else:
+        # 【正常模式】：常规的语义检索
+        # news_list = normal_semantic_search(...)
+        news_list = get_news_by_id(query)
+    return {"raw_news_list": news_list, "news_list": news_list}
 
 def data_profiling_node(state: ResearchState) -> dict:
     """数据探路：扫描检索到的新闻，提取真实存在的实体和热点"""
@@ -155,62 +183,85 @@ def spatiotemporal_scoping_anchor_node(state: dict) -> dict:
 def planning_node(state: dict) -> dict:
     print("\n" + "=" * 50)
     print("📋 [Planner] 进入任务规划阶段 (Task Orchestration)...")
-
-    # ==========================================
-    # 初始化 Parser 与 Prompt Template
-    # ==========================================
-    plan_parser = JsonOutputParser(pydantic_object=ExecutionPlan)
-
-    # 使用 LangChain 原生的 PromptTemplate 处理变量注入
-    planning_prompt = PromptTemplate(
-        template=PLANNING_PROMPT,
-        input_variables=["user_query", "intent_data", "review", "blueprint", "actual_entities", "actual_topics"],
-        partial_variables={"format_instructions": plan_parser.get_format_instructions()}
-    )
-
-    intent_data = state.get("intent", {})
-    user_query = intent_data.get("original_query", "")
-    feedback = state.get("user_feedback", "")
-    plan_history = state.get("plan")
-
-    # 获取来自 Profiling 和 Anchor 节点的时空数据
-    profile_data = state.get("analysis_results", {}).get("data_profile", {})
-    blueprint = state.get("spatiotemporal_blueprint", {})
-
-    review = ""
-    if feedback and feedback != "approve":
-        review = f"【Human-in-the-Loop 反馈】: 用户拒绝了之前的计划 ({plan_history})，并提出了修改意见：'{feedback}'。请严格按照用户的意见修正规划！"
-
-    print("   🧠 正在解析时空蓝图，生成动态数据路由计划 (JsonOutputParser)...")
-    try:
-        # 注意：这里的 model 需要是你已经实例化好的大模型对象 (例如 llm_qw_quick)
-        planning_chain = planning_prompt | model | plan_parser
-
-        # invoke 会自动填充变量，并返回经过 Pydantic 验证后的 Python 字典
-        plan_dict = planning_chain.invoke({
-            "user_query": user_query,
-            "intent_data": json.dumps(intent_data, ensure_ascii=False),
-            "review": review,
-            "blueprint": json.dumps(blueprint, ensure_ascii=False, indent=2),
-            "actual_entities": json.dumps(profile_data.get('actual_entities', []), ensure_ascii=False),
-            "actual_topics": json.dumps(profile_data.get('actual_topics', []), ensure_ascii=False)
-        })
-
-        print(f"   ✅ 规划逻辑: {plan_dict.get('total_plan_logic')}")
-        plan = plan_dict
-
-    except Exception as e:
-        print(f"   ❌ 规划解析失败: {e}")
+    intent = state.get("intent", {})
+    if intent.get("is_sandbox_request"):
+        constraints = intent.get("sandbox_constraints", {})
+        # 【沙盒模式】：直接生成标准微观下钻计划，绕过大模型自由规划
         plan = {
-            "total_plan_logic": "解析失败，启动保底执行策略。",
-            "tasks": [{
-                "task_id": 1,
-                "agent": "Global_Monitor_Agent",
-                "action": "Fallback execution",
-                "args": {"query": user_query, "target_phase_ids": []},
-                "dependency": None
-            }]
+            "total_plan_logic": f"【沙盒下钻】基于用户在时间轴上的干预，系统已将范围锁定为 {constraints['start_time']} 至 {constraints['end_time']}。系统计划调用深挖探员追踪轨迹，并调用关系探员解析微观博弈。您可以在此删减不需要的任务。",
+            "tasks": [
+                {
+                    "task_id": 1,
+                    "agent": "Deep_Dive_Agent",
+                    "action": "微观行动轨迹追踪",
+                    "args": {"target_entity": "自动提取的核心实体", "target_phase_ids": [1]},
+                    "dependency": None
+                },
+                {
+                    "task_id": 2,
+                    "agent": "Relation_Miner_Agent",
+                    "action": "微观冲突网络提炼",
+                    "args": {"focus_entities": ["自动提取的实体A", "自动提取的实体B"], "target_phase_ids": [1]},
+                    "dependency": None
+                }
+            ]
         }
+    else:
+        # ==========================================
+        # 初始化 Parser 与 Prompt Template
+        # ==========================================
+        plan_parser = JsonOutputParser(pydantic_object=ExecutionPlan)
+
+        # 使用 LangChain 原生的 PromptTemplate 处理变量注入
+        planning_prompt = PromptTemplate(
+            template=PLANNING_PROMPT,
+            input_variables=["user_query", "intent_data", "review", "blueprint", "actual_entities", "actual_topics"],
+            partial_variables={"format_instructions": plan_parser.get_format_instructions()}
+        )
+
+        intent_data = state.get("intent", {})
+        user_query = intent_data.get("original_query", "")
+        feedback = state.get("user_feedback", "")
+        plan_history = state.get("plan")
+
+        # 获取来自 Profiling 和 Anchor 节点的时空数据
+        profile_data = state.get("analysis_results", {}).get("data_profile", {})
+        blueprint = state.get("spatiotemporal_blueprint", {})
+
+        review = ""
+        if feedback and feedback != "approve":
+            review = f"【Human-in-the-Loop 反馈】: 用户拒绝了之前的计划 ({plan_history})，并提出了修改意见：'{feedback}'。请严格按照用户的意见修正规划！"
+
+        print("   🧠 正在解析时空蓝图，生成动态数据路由计划 (JsonOutputParser)...")
+        try:
+            # 注意：这里的 model 需要是你已经实例化好的大模型对象 (例如 llm_qw_quick)
+            planning_chain = planning_prompt | model | plan_parser
+
+            # invoke 会自动填充变量，并返回经过 Pydantic 验证后的 Python 字典
+            plan_dict = planning_chain.invoke({
+                "user_query": user_query,
+                "intent_data": json.dumps(intent_data, ensure_ascii=False),
+                "review": review,
+                "blueprint": json.dumps(blueprint, ensure_ascii=False, indent=2),
+                "actual_entities": json.dumps(profile_data.get('actual_entities', []), ensure_ascii=False),
+                "actual_topics": json.dumps(profile_data.get('actual_topics', []), ensure_ascii=False)
+            })
+
+            print(f"   ✅ 规划逻辑: {plan_dict.get('total_plan_logic')}")
+            plan = plan_dict
+
+        except Exception as e:
+            print(f"   ❌ 规划解析失败: {e}")
+            plan = {
+                "total_plan_logic": "解析失败，启动保底执行策略。",
+                "tasks": [{
+                    "task_id": 1,
+                    "agent": "Global_Monitor_Agent",
+                    "action": "Fallback execution",
+                    "args": {"query": user_query, "target_phase_ids": []},
+                    "dependency": None
+                }]
+            }
 
     return {
         "plan": plan,
@@ -365,74 +416,22 @@ def integrating_node(state: ResearchState) -> dict:
         "spatiotemporal_blueprint": blueprint,
         "profile_data":profile_data
     }
+    
+    # 【新增】将本次分析结果存入历史
+    task_history = state.get("task_history", [])
+    new_task_entry = {
+        "task_id": f"task_{len(task_history) + 1}",
+        "query": state.get("research_topic"),
+        "results": integrated_payload,
+        "is_sandbox": state.get("intent", {}).get("is_sandbox_request", False)
+    }
+    task_history.append(new_task_entry)
+
 
     return {
         "final_report": final_report,
         "analysis_results": integrated_payload,
         "current_phase": "ready",
-        "messages": [{"role": "ai", "content": f"报告《{final_report.get('report_title')}》已生成。"}]
+        "messages": [{"role": "ai", "content": f"报告《{final_report.get('report_title')}》已生成。"}],
+        "task_history": task_history
     }
-
-# def integrating_node(state: ResearchState) -> dict:
-#     # 初始化 Parser，绑定你的 Pydantic 模型
-#     integrating_parser = JsonOutputParser(pydantic_object=FinalReport)
-#
-#     # 创建 PromptTemplate，注入 format_instructions
-#     integrating_prompt = PromptTemplate(
-#         template=INTEGRATING_PROMPT,
-#         input_variables=["intent", "context"],
-#         partial_variables={"format_instructions": integrating_parser.get_format_instructions()}
-#     )
-#
-#     # 组装 Chain (注意：这里的 model 替换为你实际使用的 llm 实例，比如 llm_qw_quick)
-#     integrating_chain = integrating_prompt | model | integrating_parser
-#
-#     print("\n" + "=" * 50 + "\n📝 进入整合报告阶段...")
-#     intent = state.get("intent", {})
-#     raw_results = state.get("task_results", {})
-#     evidence_pool = state.get("news_list", {})
-#
-#     context_blocks = []
-#     for task_id, res in raw_results.items():
-#         agent_name = res.get("agent_name", "Unknown-Agent")
-#         summary_claims = res.get("summary", [])
-#         block = f"### Task ID: {task_id} (Agent: {agent_name})\n"
-#         if isinstance(summary_claims, list):
-#             for i, claim in enumerate(summary_claims):
-#                 statement = claim.get("statement") if isinstance(claim, dict) else getattr(claim, "statement",str(claim))
-#                 src_ids = claim.get("source_ids", []) if isinstance(claim, dict) else getattr(claim, "source_ids", [])
-#                 block += f"- 论点 {i + 1}: {statement} [证据源: {', '.join(src_ids)}]\n"
-#         else:
-#             block += f"- 分析结论: {summary_claims}\n"
-#         context_blocks.append(block)
-#
-#     formatted_context = "\n\n".join(context_blocks)
-#
-#     prompt = ChatPromptTemplate.from_messages([
-#         ("system", INTEGRATING_SYSTEM_PROMPT),
-#         ("user", "用户意图: {intent}\n\n# Input Data (各子任务结论与证据):\n{context}")
-#     ])
-#
-#     print("   🧠 正在调用 LLM 进行带有证据链的汇总写作...")
-#     try:
-#         structured_llm = model.with_structured_output(FinalReport)
-#         chain = prompt | structured_llm
-#         final_report_obj = chain.invoke({
-#             "intent": json.dumps(intent, ensure_ascii=False),
-#             "context": formatted_context
-#         })
-#         final_report = final_report_obj.model_dump()
-#         print(f"   ✅ 报告生成成功: {final_report.get('report_title')}")
-#     except Exception as e:
-#         print(f"   ❌ 报告生成失败: {e}")
-#         final_report = {"report_title": "分析报告生成失败", "executive_summary": str(e), "executive_source_ids": [],
-#                         "sections": [], "conclusion": ""}
-#
-#     integrated_payload = {"report": final_report, "tasks": raw_results, "evidence_pool": evidence_pool}
-#
-#     return {
-#         "final_report": final_report,
-#         "analysis_results": integrated_payload,
-#         "current_phase": "ready",
-#         "messages": [{"role": "ai", "content": f"报告《{final_report.get('report_title')}》已生成。"}]
-#     }

@@ -1,20 +1,31 @@
 <script setup>
-import { ref } from 'vue'
 import { useChatStore } from '../../store/chatStore'
 
 const store = useChatStore()
-const inputText = ref('帮我分析2025年第四季度美国在深海采矿方面的动态')
 
 const handleSend = () => {
-  if (inputText.value.trim() && !store.isGenerating && !store.hitlState.isWaiting) {
-    store.sendMessage(inputText.value)
-    inputText.value = ''
+  if (store.inputText.trim() && !store.isGenerating) {
+
+    // 1. 调用更新后的 sendMessage，把暂存的沙盒指令（如果有的话）传进去
+    store.sendMessage(store.inputText, store.pendingSandboxContext)
+
+    // 2. 发送完毕后，清理战场
+    store.inputText = ''
+    store.pendingSandboxContext.value = {
+      is_sandbox_request: false,
+      sandbox_constraints: { }
+
+    } // 消费完毕，清空暂存
+
+    // （可选）同时清除地图和时间轴上的刷选状态，让 UI 恢复初始形态
+    if (store.clearBrushState) {
+        store.clearBrushState()
+    }
   }
 }
 
-// 支持回车发送，Shift+Enter 换行
+// 支持回车发送，Shift+Enter 换行 (保持你原有的优秀逻辑)
 const handleKeyDown = (e) => {
-  // 确保是在没有使用输入法组合键（isComposing）的情况下按下的回车
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault()
     handleSend()
@@ -25,18 +36,18 @@ const handleKeyDown = (e) => {
 <template>
   <div class="chat-input-container">
     <textarea
-      v-model="inputText"
+      v-model="store.inputText"
       @keydown="handleKeyDown"
       class="custom-textarea"
       placeholder="Enter instructions (Enter to send, Shift+Enter to wrap)..."
-      :disabled="store.isGenerating || store.hitlState.isWaiting"
+      :disabled="store.isGenerating"
       rows="3"
     ></textarea>
 
     <button
       class="send-btn"
       @click="handleSend"
-      :disabled="!inputText.trim() || store.isGenerating || store.hitlState.isWaiting"
+      :disabled="!store.inputText.trim() || store.isGenerating"
     >
       Send
     </button>

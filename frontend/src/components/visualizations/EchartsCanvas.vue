@@ -4,7 +4,7 @@ import * as echarts from 'echarts'
 import { useChatStore } from '../../store/chatStore'
 
 // 定义响应式的视图模式变量，默认为 'timeline'
-const viewMode = ref('timeline');
+const viewMode = ref('all');
 
 const props = defineProps({
   chartType: String,
@@ -94,7 +94,8 @@ const renderChart = async () => {
           top: 'top',    // 垂直位置：可选 'top'/'middle'/'bottom'、像素值（如 20）、百分比（如 '10%'）
           feature: {
             brush: {
-              type: ['rect', 'polygon', 'clear'] // 允许矩形、多边形选框和清除按钮
+              type: ['rect', 'polygon', 'keep','clear'], // 允许矩形、多边形选框和清除按钮
+              // title: { rect: '矩形圈选', polygon: '自由圈选', clear: '清除圈选' }
             }
           },
           iconStyle: { borderColor: '#409EFF' } // 契合你的 UI 主色调
@@ -104,6 +105,7 @@ const renderChart = async () => {
         brush: {
           geoIndex: 'all', // 告诉刷选组件它在针对地理坐标系操作
           brushLink: 'all',
+          brushMode: 'multiple', // 【核心破局点】：开启多选模式！
           outOfBrush: {
             colorAlpha: 0.2 // 框选区域外的数据点变暗（自带 Dimming 效果！）
           },
@@ -303,75 +305,52 @@ const renderChart = async () => {
     const areas = params.areas
     if (!areas || areas.length === 0) {
       console.log('用户清除了选框')
+      // 清除 store 中的空间标签
+      store.updateBrushState(store.brushState.timeRange, [])
       return
     }
 
     // 获取第一个选框的数据
     const currentArea = areas[0]
+    let coordinates = []
 
-    // 场景 A：如果你想获取选框真实的【经纬度边界】(以矩形为例)
+    // 场景 A：矩形选框
     if (currentArea.brushType === 'rect') {
-      const [[x1, x2], [y1, y2]] = currentArea.range // 拿到屏幕像素的 X 和 Y 范围
+      const [[x1, x2], [y1, y2]] = currentArea.range
+      // 采样 5 个点：4个角 + 中心点
+      const points = [
+        [x1, y2], // 左下
+        [x2, y2], // 右下
+        [x2, y1], // 右上
+        [x1, y1], // 左上
+        [(x1+x2)/2, (y1+y2)/2] // 中心
+      ]
 
-      // 使用 convertFromPixel 将像素转为经纬度 [lon, lat]
-      // 注意传入 geo 坐标系，x1, y2 对应左下角，x2, y1 对应右上角
-      const bottomLeft = chartInstance.value.convertFromPixel({ geoIndex: 0 }, [x1, y2])
-      const topRight = chartInstance.value.convertFromPixel({ geoIndex: 0 }, [x2, y1])
-
-      console.log(`选区经纬度范围:
-        左下角: 经度 ${bottomLeft[0].toFixed(2)}, 纬度 ${bottomLeft[1].toFixed(2)}
-        右上角: 经度 ${topRight[0].toFixed(2)}, 纬度 ${topRight[1].toFixed(2)}
-      `)
+      coordinates = points.map(p => {
+        const coord = chartInstance.value.convertFromPixel({ geoIndex: 0 }, p)
+        return [Number(coord[0].toFixed(2)), Number(coord[1].toFixed(2))]
+      })
     }
-    // === 处理多边形 (Polygon) 边界 ===
-  if (currentArea.brushType === 'polygon') {
-    // 拿到多边形所有顶点的像素坐标数组
-    const pixelPoints = currentArea.range
+    // 场景 B：多边形选框
+    else if (currentArea.brushType === 'polygon') {
+      const pixelPoints = currentArea.range
+      // 采样：如果点太多，每隔几个取一个
+      const step = Math.ceil(pixelPoints.length / 10)
+      const sampledPixels = pixelPoints.filter((_, i) => i % step === 0)
 
-    // 将每一个像素点转换为真实的 [经度, 纬度]
-    const geoPolygon = pixelPoints.map(pixel => {
-      // 传入 geoIndex: 0 表示使用第一个地理坐标系进行转换
-      const coord = chartInstance.value.convertFromPixel({ geoIndex: 0 }, pixel)
-      // 保留两位小数，使得数据更干净
-      return [Number(coord[0].toFixed(2)), Number(coord[1].toFixed(2))]
-    })
+      coordinates = sampledPixels.map(pixel => {
+        const coord = chartInstance.value.convertFromPixel({ geoIndex: 0 }, pixel)
+        return [Number(coord[0].toFixed(2)), Number(coord[1].toFixed(2))]
+      })
+    }
 
-    console.log('框选的海洋多边形经纬度集合:', geoPolygon)
-    // 输出结果示例: [[118.5, 23.2], [122.1, 24.5], [120.3, 21.8], ...]
+    console.log('采样坐标:', coordinates)
 
-    // 你可以将这个 geoPolygon 数组发送给后端，
-    // 后端可以使用 Elasticsearch 的 geo_polygon 查询，或者 PostGIS 的 ST_Within 进行空间检索
-  }
-  //
-  // // 可选：将数据输出到页面（比如展示在某个 div 中）
-  // const outputDom = document.getElementById('brush-output');
-  // if (outputDom) {
-  //   outputDom.innerHTML = `
-  //     <div>多边形顶点数：${currentArea.type === 'polygon' ? currentArea.area[0].path.length : '非多边形'}</div>
-  //     <div>选中热点数量：${selectedData.length}</div>
-  //     <div>选中数据：${JSON.stringify(selectedData, null, 2)}</div>
-  //   `;
-  // }
-
-    // 场景 B：如果你更关心【哪些数据点(热点事件)】被框中了
-    // params.areas 不包含具体数据，数据在 echarts 实例里，可以通过 getOption() 结合当前高亮状态获取
-    // 或者最简单的，用 brushSelected 事件去抓 payload 里的 dataIndex
+    // 调用 Store 的 Action 进行反解
+    if (coordinates.length > 0) {
+       store.resolveMapBrush(coordinates)
+    }
   })
-
-  // 可选：监听 brushSelected 获取被框中的具体散点数据
-  // chartInstance.value.off('brushSelected')
-  // chartInstance.value.on('brushSelected', (params) => {
-  //   const brushComponent = params.batch[0]
-  //   if (brushComponent.selected.length === 0) return
-  //
-  //   // 这里的 dataIndex 就是被框中的点在 originalSeriesData 里的索引
-  //   const selectedIndices = brushComponent.selected[0].dataIndex
-  //   if (selectedIndices.length > 0) {
-  //     const selectedData = selectedIndices.map(index => originalSeriesData[index])
-  //     console.log('被框中的热点事件数据:', selectedData)
-  //     // 这里可以触发 Store 更新，比如 store.updateSpatialFilter(selectedData)
-  //   }
-  // })
 }
 
 // ==========================================
@@ -481,7 +460,7 @@ onUnmounted(() => { if (resizeObserver) resizeObserver.disconnect(); chartInstan
   position: absolute;
   top: 15px;
   right: 15px;
-  z-index: 10;
+  z-index: 1;
   display: flex;
   background: rgba(255, 255, 255, 0.9);
   border-radius: 6px;

@@ -25,6 +25,8 @@ class ResearchState(TypedDict):
     user_feedback: str
     analysis_results: Dict[str, Any]
     spatiotemporal_blueprint : dict
+    # 【新增】任务历史，用于存储多次分析的结果
+    task_history: List[Dict[str, Any]]
 
 # === 整合节点的溯源输出模型 ===
 class Claim(BaseModel):

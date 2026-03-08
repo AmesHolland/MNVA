@@ -4,6 +4,7 @@ from flask import Blueprint, request, Response, stream_with_context, jsonify
 from langchain_core.messages import HumanMessage, AIMessage
 
 from agent.agents.controller.graph import create_visual_analytics_assistant
+from agent.config.llm_config import llm_qw_quick # 引入轻量级模型
 
 chat_bp = Blueprint('chat', __name__)
 
@@ -13,7 +14,7 @@ compiled_graph = create_visual_analytics_assistant()
 def generate_sse_stream(graph_app, inputs, config):
     """
     通用生成器，用于将 LangGraph 的运行过程转换为 SSE 数据流。
-    每次产出 (yield) 的格式必须严格遵循 SSE 规范: "event: [事件名]\ndata: [JSON数据]\n\n"
+    每次产出 (yield) 的格式必须严格遵循 SSE规范: "event: [事件名]\ndata: [JSON数据]\n\n"
     """
     try:
         # 【新增】：在漫长的 LLM 思考开始前，立刻向前端发送一个占位事件，稳固 HTTP 连接
@@ -44,6 +45,7 @@ def generate_sse_stream(graph_app, inputs, config):
             # 图完全执行结束
             final_results = state_snapshot.values.get("analysis_results", {})
             final_report = state_snapshot.values.get("final_report", "")
+            task_history = state_snapshot.values.get("task_history", [])
 
             # 获取最后一条 AI 消息的内容（这包含了 simple_chat 的直接回答）
             messages_history = state_snapshot.values.get("messages", [])
@@ -60,7 +62,8 @@ def generate_sse_stream(graph_app, inputs, config):
                 "status": "completed",
                 "results": final_results,
                 "direct_answer": final_report if isinstance(final_report, str) else last_ai_message,
-                "is_new_visual_result": is_new_visual  # <-- 明确的 Flag 传给前端
+                "is_new_visual_result": is_new_visual,  # <-- 明确的 Flag 传给前端
+                "task_history": task_history # 返回历史任务列表
             }
             yield f"event: completed\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -82,29 +85,55 @@ def chat():
 
     thread_id = f"{user_id}_{session_id}"
     topic = data.get('query')
+    intent_override = data.get('intent_override') # 获取前端传来的意图覆盖
 
     # 配置 LangGraph 记忆的上下文
     config = {"configurable": {"thread_id": thread_id}}
-    initial_state = initial_state = {
-        "messages": [HumanMessage(content=f"请对以下主题进行深入研究：{topic}")],
-        "research_topic": topic,
-        "research_questions": [],
-        "intent": [],
-        "plan": {},  # 等待 planner 填充
-        "user_feedback": "",  # 新增：用于接收 CLI 输入的反馈
-        "findings": [],
-        "task_results": {},
-        "final_report": "",
-        "draft_sections": {},
-        "current_phase": "",
-        "iteration_count": 0,
-        "research_list": []
-    }
+    
+    # 检查是否存在历史状态
+    state_snapshot = compiled_graph.get_state(config)
+    
+    if state_snapshot.values:
+        # 如果有历史状态，追加消息，而不是重置
+        # 注意：我们需要更新 research_topic 为最新的 query，以便后续节点使用
+        update_dict = {
+            "messages": [HumanMessage(content=f"{topic}")],
+            "research_topic": topic,
+            "user_feedback": "", # 重置反馈
+            "current_phase": "intent", # 重置阶段
+        }
+        if intent_override:
+             # 如果有覆盖指令，我们预先设置 intent
+             update_dict["intent"] = intent_override
+        else:
+             # 【重要】如果没有覆盖指令，必须清空 intent，防止 intent_node 误读上一轮的沙盒 intent
+             update_dict["intent"] = {}
+
+        inputs = update_dict
+    else:
+        # 初始状态
+        initial_state = {
+            "messages": [HumanMessage(content=f"请对以下主题进行深入研究：{topic}")],
+            "research_topic": topic,
+            "research_questions": [],
+            "intent": intent_override if intent_override else {}, # 初始化 intent
+            "plan": {},  # 等待 planner 填充
+            "user_feedback": "",  # 新增：用于接收 CLI 输入的反馈
+            "findings": [],
+            "task_results": {},
+            "final_report": "",
+            "draft_sections": {},
+            "current_phase": "",
+            "iteration_count": 0,
+            "research_list": [],
+            "task_history": [] # 初始化任务历史
+        }
+        inputs = initial_state
 
     # 满足要求2：流式返回
     # 注意：mimetype 必须是 text/event-stream
     return Response(
-        stream_with_context(generate_sse_stream(compiled_graph, initial_state, config)),
+        stream_with_context(generate_sse_stream(compiled_graph, inputs, config)),
         mimetype='text/event-stream'
     )
 
@@ -138,61 +167,45 @@ def feedback():
         mimetype='text/event-stream'
     )
 
+@chat_bp.route('/geo_resolve', methods=['POST'])
+def geo_resolve():
+    """
+    接收一组经纬度坐标，利用 LLM 识别其对应的地理区域名称。
+    Input: { "coordinates": [[118.2, 15.1], [119.5, 14.8], ...] }
+    Output: { "regions": ["黄岩岛", "菲律宾西海岸"] }
+    """
+    data = request.json
+    coords = data.get('coordinates', [])
+    
+    if not coords or len(coords) == 0:
+        return jsonify({"regions": []})
 
-# def generate_sse_stream(graph_app, inputs, config):
-#     """
-#     通用生成器：支持 Token 级逐字输出 + 节点进度推送
-#     SSE 事件类型：
-#     - node_progress: 节点执行进度（如 "planner" 节点开始/结束）
-#     - token: LLM 逐字生成的 Token
-#     - interrupt: 等待用户审批
-#     - completed: 流程完成
-#     - error: 异常信息
-#     """
-#     try:
-#         # ❶ 第一步：先主动推送「启动执行」的节点进度（可选，提升体验）
-#         yield f"event: node_progress\ndata: {json.dumps({'node': 'start', 'msg': '开始执行分析流程'}, ensure_ascii=False)}\n\n"
-#
-#         # ❷ 核心修改：stream_mode 改为 "messages"，并处理 Token 流
-#         # stream_mode="messages" 会返回 LLM 生成的增量消息块（Token 级）
-#         full_content = ""  # 缓存 AI 生成的完整内容
-#         for chunk in graph_app.stream(inputs, config=config, stream_mode="messages"):
-#             # 解析 messages 模式的 chunk（增量消息块）
-#             if isinstance(chunk, AIMessage):
-#                 # 提取增量 Token（chunk.content 是当前新增的内容）
-#                 delta = chunk.content[len(full_content):]  # 只取新增的 Token
-#                 if delta:  # 避免空内容推送
-#                     full_content = chunk.content  # 更新完整内容
-#                     # 推送 Token 事件（前端可逐字拼接）
-#                     yield f"event: token\ndata: {json.dumps({'content': delta}, ensure_ascii=False)}\n\n"
-#
-#             # 兼容：如果你的图仍返回节点更新（部分版本 LangGraph 兼容），保留节点进度推送
-#             elif isinstance(chunk, dict) and any(k in chunk for k in graph_app.nodes):
-#                 for node_name, _ in chunk.items():
-#                     yield f"event: node_progress\ndata: {json.dumps({'node': node_name}, ensure_ascii=False)}\n\n"
-#
-#         # ❸ 图暂停/结束后的状态处理（和原有逻辑一致）
-#         state_snapshot = graph_app.get_state(config)
-#         next_node = state_snapshot.next
-#
-#         if next_node and "check" in next_node:
-#             # 命中审批节点，推送中断事件
-#             current_plan = state_snapshot.values.get("current_plan", {})
-#             payload = {
-#                 "status": "waiting_for_approval",
-#                 "plan": current_plan,
-#                 "generated_content": full_content  # 附带已生成的内容（可选）
-#             }
-#             yield f"event: interrupt\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
-#         else:
-#             # 流程完成，推送最终结果
-#             final_results = state_snapshot.values.get("final_report", {})
-#             payload = {
-#                 "status": "completed",
-#                 "results": final_results,
-#                 "full_content": full_content  # 附带完整生成内容
-#             }
-#             yield f"event: completed\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
-#
-#     except Exception as e:
-#         yield f"event: error\ndata: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+    # 采样：如果点太多，只取前 10 个和中间几个，避免 Token 爆炸
+    sampled_coords = coords[:5] + coords[-5:] if len(coords) > 10 else coords
+    
+    prompt = f"""
+    你是一个地理信息专家。请根据以下经纬度坐标样本，判断它们大致位于哪个具体的海洋区域、岛屿或国家附近。
+    
+    坐标样本 (经度, 纬度): {sampled_coords}
+    
+    请直接输出最核心的 1-3 个地理名称（例如：'南海', '钓鱼岛', '关岛'），不要输出任何解释性文字。
+    返回格式必须是 JSON 列表，例如: ["Region A", "Region B"]
+    """
+    
+    try:
+        response = llm_qw_quick.invoke([HumanMessage(content=prompt)])
+        # 简单的字符串清洗，尝试提取 JSON
+        content = response.content.strip()
+        # 如果 LLM 返回了 ```json ... ```，去掉它
+        if "```" in content:
+            content = content.split("```")[1].replace("json", "").strip()
+        
+        regions = json.loads(content)
+        if not isinstance(regions, list):
+            regions = [str(regions)]
+            
+        return jsonify({"regions": regions})
+        
+    except Exception as e:
+        print(f"Geo resolve error: {e}")
+        return jsonify({"regions": ["Unknown Region"]})

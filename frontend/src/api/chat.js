@@ -69,3 +69,19 @@ export const streamChat = (payload, callbacks) => {
 export const streamFeedback = (payload, callbacks) => {
   return createSSEConnection('/feedback', payload, callbacks)
 }
+
+// 【新增】：地理反解接口
+export const geoResolve = async (coordinates) => {
+  try {
+    const response = await fetch(`${BASE_URL}/geo_resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coordinates })
+    })
+    if (!response.ok) throw new Error('Geo resolve failed')
+    return await response.json()
+  } catch (error) {
+    console.error('Geo resolve error:', error)
+    return { regions: [] }
+  }
+}

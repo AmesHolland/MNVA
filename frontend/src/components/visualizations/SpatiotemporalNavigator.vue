@@ -36,19 +36,20 @@ const syncLabelsFromProfile = (profile) => {
   if (profile.actual_spatial_range && Array.isArray(profile.actual_spatial_range)) {
     spatialLabels.value = profile.actual_spatial_range.map(location => ({
       name: location,
-      active: true
+      active: false
     }))
   }
 
   // 2. 替换 topicLabels
-  if (profile.actual_topics && Array.isArray(profile.actual_topics)) {
-    topicLabels.value = profile.actual_topics.map(topic => ({
-      name: topic,
-      active: true,
-      // 如果你需要给特定的 topic 加上 isFocus: true，可以在这里加个判断，例如：
-      // isFocus: topic === '联合军演'
-    }))
-  }
+  // if (profile.actual_topics && Array.isArray(profile.actual_topics)) {
+  //   topicLabels.value = profile.actual_topics.map(topic => ({
+  //     name: topic,
+  //     active: true,
+  //     // 如果你需要给特定的 topic 加上 isFocus: true，可以在这里加个判断，例如：
+  //     // isFocus: topic === '联合军演'
+  //   })
+  //   )
+  // }
 }
 
 // 实际应用中，你可以在 onMounted 或者 watch 中调用它：
@@ -71,7 +72,7 @@ const toggleLabel = (label) => {
     const activeSpatialTags = spatialLabels.value.filter(l => l.active).map(l => l.name)
     const activeTopicTags = topicLabels.value.filter(l => l.active).map(l => l.name)
 
-    store.updateBrushState([startTimestamp, endTimestamp], [...activeSpatialTags, ...activeTopicTags])
+    store.updateBrushState([startTimestamp, endTimestamp], [...activeSpatialTags])
     // console.log("[startTimestamp, endTimestamp]:" + [startTimestamp, endTimestamp])
   }
 }
@@ -187,22 +188,22 @@ const renderTimeline = () => {
     // 将当前所有高亮的空间/语义标签提取出来
     const activeSpatialTags = spatialLabels.value.filter(l => l.active).map(l => l.name)
     const activeTopicTags = topicLabels.value.filter(l => l.active).map(l => l.name)
-    const allActiveTags = [...activeSpatialTags, ...activeTopicTags]
+    //const allActiveTags = [...activeSpatialTags, ...activeTopicTags]
 
     // 🔥 汇报给全局 Store！
-    store.updateBrushState([startTimestamp, endTimestamp], allActiveTags)
+    store.updateBrushState([startTimestamp, endTimestamp], [...activeSpatialTags])
 
   })
 
   // 初始化时，如果默认有缩放范围，主动派发一次
-  setTimeout(() => {
-    const initOption = chartInstance.value.getOption()
-    if (initOption && initOption.dataZoom && initOption.dataZoom.length > 0) {
-      const initStart = initOption.dataZoom[0].startValue
-      const initEnd = initOption.dataZoom[0].endValue
-      store.updateBrushState([initStart, initEnd], [])
-    }
-  }, 500)
+  // setTimeout(() => {
+  //   const initOption = chartInstance.value.getOption()
+  //   if (initOption && initOption.dataZoom && initOption.dataZoom.length > 0) {
+  //     const initStart = initOption.dataZoom[0].startValue
+  //     const initEnd = initOption.dataZoom[0].endValue
+  //     store.updateBrushState([initStart, initEnd], [])
+  //   }
+  // }, 500)
 }
 
 onMounted(() => {
@@ -233,16 +234,16 @@ watch(() => store.analysisResults?.spatiotemporal_blueprint, () => {
         </button>
       </div>
 
-      <div class="label-group">
-        <span class="group-title">🏷️ Topics:</span>
-        <button
-          v-for="item in topicLabels" :key="item.name"
-          :class="['label-btn topic-btn', { active: item.active, 'is-focus': item.isFocus }]"
-          @click="toggleLabel(item)"
-        >
-          {{ item.name }}
-        </button>
-      </div>
+<!--      <div class="label-group">-->
+<!--        <span class="group-title">🏷️ Topics:</span>-->
+<!--        <button-->
+<!--          v-for="item in topicLabels" :key="item.name"-->
+<!--          :class="['label-btn topic-btn', { active: item.active, 'is-focus': item.isFocus }]"-->
+<!--          @click="toggleLabel(item)"-->
+<!--        >-->
+<!--          {{ item.name }}-->
+<!--        </button>-->
+<!--      </div>-->
 
     </div>
 
