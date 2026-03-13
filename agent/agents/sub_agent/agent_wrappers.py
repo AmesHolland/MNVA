@@ -11,6 +11,7 @@ def global_monitor_agent_wrapper(args: dict) -> dict:
     # 【新增】：获取 Planner 传过来的蓝图上下文和重点区域列表
     blueprint_context = args.get("blueprint_overall_narrative", "无特定演化阶段参考")
     focus_regions = args.get("focus_regions", [])
+    output_language = args.get("output_language")
 
     if focus_regions:
         query += f" | 重点关注区域(必须精准匹配坐标): {', '.join(focus_regions)}"
@@ -18,7 +19,7 @@ def global_monitor_agent_wrapper(args: dict) -> dict:
     news_list = args.get("global_news_list", [])
 
     # 将 blueprint_context 一并传给底层 Agent
-    result = global_monitor_agent(news_list, query, blueprint_context)
+    result = global_monitor_agent(news_list, query, blueprint_context, output_language)
 
     return {
         "agent_name": "Global_Monitor_Agent",
@@ -34,7 +35,7 @@ def deep_dive_agent_wrapper(args: dict) -> dict:
     # 【新增】：获取 Planner 传过来的蓝图上下文和重点区域列表
     blueprint_context = args.get("blueprint_overall_narrative", "无特定演化阶段参考")
     focus_regions = args.get("focus_regions", [])
-
+    output_language = args.get("output_language", "English")
     # 强制空间锚定
     if focus_regions:
         query += f" | 重点关注区域(提取坐标时请优先考虑): {', '.join(focus_regions)}"
@@ -43,7 +44,7 @@ def deep_dive_agent_wrapper(args: dict) -> dict:
     print(f"   🚀 [Exec] Deep_Dive 启动: 深挖 '{entity}' 的行为画像...")
 
     # 【新增】：传入 blueprint_context
-    result = deep_dive_agent(entity, query, news_list, blueprint_context)
+    result = deep_dive_agent(entity, query, news_list, blueprint_context, output_language)
 
     return {
         "agent_name": "Deep_Dive_Agent",
@@ -56,6 +57,7 @@ def deep_dive_agent_wrapper(args: dict) -> dict:
 def relation_miner_agent_wrapper(args: dict) -> dict:
     entities = args.get("focus_entities", [])
     news_list = args.get("global_news_list", [])
+    output_language = args.get("output_language", "English")
 
     # 【新增】：获取 Planner 传过来的蓝图上下文
     blueprint_context = args.get("blueprint_overall_narrative", "无特定宏观演化阶段参考")
@@ -64,7 +66,7 @@ def relation_miner_agent_wrapper(args: dict) -> dict:
     print(f"   🚀 [Exec] Relation_Miner 启动: 挖掘 {entities_str} 之间的博弈关系...")
 
     # 【新增】：传入 blueprint_context
-    result = relation_miner_agent(entities, news_list, blueprint_context)
+    result = relation_miner_agent(entities, news_list, blueprint_context, output_language)
 
     return {
         "agent_name": "Relation_Miner_Agent",

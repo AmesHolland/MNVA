@@ -28,7 +28,8 @@ class GeoPoint(BaseModel):
     summary: str = Field(description="Short summary for the map tooltip")
     source_ids: List[str] = Field(description="List of DOC_IDs that support this geographic event. Like ['001']")
 
-class TimePoint(BaseModel):
+# === 1. 更新 TimePoint 模型以适配 Ridgeline Plot ===
+class RidgelinePoint(BaseModel):
     date: str = Field(description="Date in YYYY-MM-DD format")
     topic_name: str = Field(description="Name of the topic")
     count: int = Field(description="Number of articles for this topic on this date")
@@ -38,7 +39,8 @@ class GlobalMonitorOutput(BaseModel):
     overview_claims: List[Claim] = Field(description="A macro summary broken down into traceable claims.")
     topics: List[TopicNode] = Field(description="List of top 3-5 identified topics with their temporal patterns.")
     geo_data: List[GeoPoint] = Field(description="Data for rendering the dynamic map with time sliders.")
-    trend_data: List[TimePoint] = Field(description="Data for rendering the ThemeRiver/AreaChart.")
+    # === 2. 更新输出字段名称 ===
+    ridgeline_data: List[RidgelinePoint] = Field(description="Data for rendering the Ridgeline Plot (daily counts per topic).")
 
 # 1. 初始化 LLM
 llm = llm_qw_quick
@@ -49,7 +51,7 @@ parser = JsonOutputParser(pydantic_object=GlobalMonitorOutput)
 # 3. 构建 Chain
 prompt = PromptTemplate(
     template=GLOBAL_MONITOR_PROMPT,
-    input_variables=["query", "news_context"],
+    input_variables=["query", "news_context", "output_language"],
     partial_variables={"format_instructions": parser.get_format_instructions()}
 )
 
@@ -57,7 +59,7 @@ global_monitor_chain = prompt | llm | parser
 
 
 # 4. 定义 LangGraph 节点函数
-def global_monitor_agent(docs, query, blueprint_context=""):
+def global_monitor_agent(docs, query, blueprint_context="", output_language="English"):
     """
     LangGraph Node: Extracts macro spatiotemporal shifts and topics.
     Expected State Input:
@@ -84,7 +86,8 @@ def global_monitor_agent(docs, query, blueprint_context=""):
         result = global_monitor_chain.invoke({
             "query": query,
             "news_context": news_context,
-            "blueprint_context": blueprint_context  # 注入 Prompt
+            "blueprint_context": blueprint_context,  # 注入 Prompt
+            "output_language":output_language
         })
     except Exception as e:
         print(f"❌ Global Monitor 运行出错: {e}")
@@ -101,7 +104,8 @@ def global_monitor_agent(docs, query, blueprint_context=""):
         "visualization_data": {
             "view_type": "global_monitor",
             "geo_dynamic_data": result.get("geo_data", []),  # 供带时间滑块的地图使用
-            "trend_river_data": result.get("trend_data", [])  # 供主题河流图使用
+            # === 3. 更新返回给前端的字段名 ===
+            "ridgeline_data": result.get("ridgeline_data", [])  # 供峰峦图使用
         },
 
         # 保留原始解析结果以备他用
@@ -113,46 +117,3 @@ if __name__ == '__main__':
     news_list = get_news_by_id([])
     result = global_monitor_agent(news_list, query, "美国从10月激进部署与规则博弈，转向12月因挪威暂停及国际压力而陷入治理僵局。")
     print(result)
-
-# def global_monitor_node(state):
-#     # 1. 获取检索到的新闻 (假设在 search_node 中已经存入 state)
-#     # state['retrieved_docs'] = [{'id': 1, 'content': '...', 'date': '...'}, ...]
-#     raw_docs = state.get("retrieved_docs", [])
-#
-#     # 2. 调用 LLM 进行打标 (Tagging)
-#     # 这一步只让 LLM 返回分类结果，不让它数数
-#     tagging_result = tagging_chain.invoke({"news_list_formatted": format_docs(raw_docs)})
-#     # tagging_result = [{'id': 1, 'topic': 'A', 'location': '...'}, ...]
-#
-#     # 3. 【关键步骤】使用 Python 进行确定性统计 (Deterministic Aggregation)
-#
-#     # 将 LLM 的结果转为 DataFrame 方便处理
-#     df_tags = pd.DataFrame(tagging_result)
-#     df_docs = pd.DataFrame(raw_docs)
-#
-#     # 合并数据 (以 ID 为键)
-#     merged_df = pd.merge(df_tags, df_docs, on="id")
-#
-#     # --- A. 统计 Topic 热度 (Count) ---
-#     # 这一步计算出的数值是 100% 准确的
-#     topic_counts = merged_df['topic'].value_counts().reset_index()
-#     topic_counts.columns = ['topic_name', 'count']
-#
-#     # --- B. 生成时间演化数据 (Time Evolution) ---
-#     # 因为我们在 raw_docs 里有准确的 date，这里直接 groupby 即可
-#     # 这样你就无需单独的 Time-Evolution-Agent 了
-#     trend_data = merged_df.groupby(['date', 'topic']).size().reset_index(name='count')
-#
-#     # --- C. 生成地理数据 (Geo Data) ---
-#     # 可以取每个 Topic 下出现频率最高的 Location，或者保留所有散点
-#     geo_data = merged_df[['lat', 'lon', 'topic', 'title']].to_dict(orient='records')
-#
-#     # 4. 构建最终输出
-#     final_output = {
-#         "topics_summary": topic_counts.to_dict(orient='records'),
-#         "trend_data": trend_data.to_dict(orient='records'),
-#         "geo_data": geo_data,
-#         "raw_evidence": merged_df.to_dict(orient='records')  # 用于溯源验证
-#     }
-#
-#     return {"visualization_data": final_output}

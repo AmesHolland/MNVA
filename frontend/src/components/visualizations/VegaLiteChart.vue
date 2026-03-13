@@ -69,64 +69,71 @@ const renderChart = async () => {
   let spec = {}
 
   // ==========================================
-  // 1. Theme River 主题河流图
+  // 1. Ridgeline Plot (峰峦图) - Replaces ThemeRiver
   // ==========================================
-  if (props.chartType === 'theme_river') {
-  // 假设 props.chartData 传入的是 trend_river_data 数组
-  spec = {
-    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-    // 你的 preprocess 最好能确保日期格式为标准 ISO (YYYY-MM-DD)
-    // data: { values: preprocessThemeRiverData(props.chartData) },
-    data: { values: props.chartData },
-    width: "container",
-    height: "container",
-    // 【VIS加分项】：增加一个选择器，使得鼠标悬停时高亮当前主题，其余变暗
-    params: [{
-      name: "hover",
-      select: { type: "point", fields: ["topic_name"], on: "mouseover", clear: "mouseout" }
-    }],
-    mark: {
-      type: "area",
-      interpolate: "basis", // 'monotone' 比 'basis' 拟合更平滑，且不会越界
-      tooltip: true,
-      cursor: "pointer"
-    },
-    transform: [
-      { calculate: "datum.source_ids && length(datum.source_ids) > 0 ? '👆 Click the ripple to view ' + length(datum.source_ids) + ' pieces of intelligence' : 'No direct sources'", as: "hint" }
-    ],
-    encoding: {
-      x: {
-        field: "date",
-        type: "temporal",
-        axis: { title: "Timeline Evolution", format: "%m-%d", grid: false }
+  if (props.chartType === 'ridgeline_plot') {
+    spec = {
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      data: { values: props.chartData },
+      width: "container", // 让宽度自适应父容器
+      // height: 200, // 移除固定总高度，改用 step 控制行高
+      // 【修改点 1】：告诉 Vega-Lite 高度也跟随容器
+      height: "container",
+      // 【修改点 2】：强制图表缩放以适应外部容器尺寸
+      autosize: { type: "fit", contains: "padding" },
+      title: null, // 移除标题，节省空间
+      mark: {
+        type: "area",
+        interpolate: "monotone",
+        fillOpacity: 0.8,
+        stroke: "white",
+        strokeWidth: 0.5
       },
-      y: {
-        field: "count",
-        type: "quantitative",
-        stack: "center", // center 模式构成真正的河流图 (Streamgraph)
-        axis: null,
-        impute: { value: 0 } // 防止断层
+      encoding: {
+        x: {
+          field: "date",
+          type: "temporal",
+          axis: { title: null, format: "%m-%d", grid: false, tickCount: 5 } // 减少刻度数量，避免拥挤
+        },
+        y: {
+          field: "count",
+          type: "quantitative",
+          axis: null,
+          scale: { range: [25, 0] } // 【关键】：控制每个波峰的最大高度 (像素)，反转范围以正确向上生长
+        },
+        row: {
+          field: "topic_name",
+          type: "nominal",
+          header: {
+            title: null,
+            labelAngle: 0,
+            labelAlign: "left",
+            labelPadding: 2,
+            labelFontSize: 11,
+            labelFontWeight: "bold"
+          },
+          // spacing: -18 // 【关键】：负间距实现堆叠效果，数值绝对值越接近 range[0] 堆叠越紧密
+        },
+        color: {
+          field: "topic_name",
+          type: "nominal",
+          scale: { scheme: "tableau10" },
+          legend: null
+        },
+        tooltip: [
+          { field: "date", type: "temporal", title: "Date", format: "%Y-%m-%d" },
+          { field: "topic_name", type: "nominal", title: "Topic" },
+          { field: "count", type: "quantitative", title: "Article Count" }
+        ]
       },
-      color: {
-        field: "topic_name",
-        type: "nominal",
-        scale: { scheme: "tableau10" }, // tableau10 的配色在学术论文中显得更专业高级
-        legend: { orient: "top", title: null } // 将图例放到上方，节省横向空间
-      },
-      // 加入高亮交互逻辑
-      opacity: {
-        condition: { param: "hover", empty: false, value: 1 },
-        value: 0.8
-      },
-      tooltip: [
-        { field: "date", type: "temporal", title: "Occurrence Date", format: "%Y-%m-%d" },
-        { field: "topic_name", type: "nominal", title: "Macro Topic" },
-        { field: "count", type: "quantitative", title: "Number of Related News" },
-        { field: "hint", type: "nominal", title: "Intelligence Source Tracing" }
-      ]
+      config: {
+        view: { stroke: null }, // 移除边框
+        axis: { domain: false }, // 移除轴线
+        // 【修改点 3】：覆盖默认的分面 step 行为
+        facet: { spacing: 0 }
+      }
     }
   }
-}
   // ==========================================
   // 2. Scatter Timeline 散点分类时间轴
   // ==========================================
@@ -167,7 +174,7 @@ const renderChart = async () => {
           field: "intensity",
           type: "quantitative",
           scale: { scheme: "reds", domain: [0, 5] },
-          legend: { title: "Military Intensity (1-5)" }
+          legend: { title: "Politics Intensity (1-5)" }
         },
         // Interactive highlight
         opacity: {

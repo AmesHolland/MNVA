@@ -67,14 +67,15 @@ watch(() => store.messages.length, async () => {
 </template>
 
 <style scoped>
+/* 容器布局保持清爽 */
 .chat-box {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-bottom: 20px;
+  gap: 20px; /* 稍微增加间距，让对话呼吸感更强 */
+  padding-bottom: 24px;
   height: 100%;
   overflow-y: auto;
-  padding-right: 10px; /* 防止滚动条遮挡内容 */
+  padding-right: 12px;
 }
 
 .message-wrapper {
@@ -89,72 +90,91 @@ watch(() => store.messages.length, async () => {
   flex-direction: row-reverse;
 }
 
+/* 头像设计：摒弃高饱和色块，采用学术风冷色调 */
 .avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 32px; /* 稍微缩小头像，突出内容 */
+  height: 32px;
+  border-radius: 6px; /* 从纯圆改为微圆角矩形，更具工具感 */
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: bold;
-  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   flex-shrink: 0;
+  border: 1px solid transparent;
 }
 
-.ai-avatar { background-color: #409EFF; }
-.user-avatar { background-color: #67C23A; }
+/* AI 探员的头像：专业冷灰 */
+.ai-avatar {
+  background-color: #f1f5f9;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+/* 用户的头像：克制的主题浅蓝 */
+.user-avatar {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border-color: #bae6fd;
+}
 
 .message-content-container {
-  max-width: 85%;
+  max-width: 88%;
   display: flex;
   flex-direction: column;
-  /* 确保子元素（如卡片）能撑满容器宽度 */
   width: auto;
 }
 
+/* 气泡基础样式：取消阴影，使用极细边框界定边界 */
 .message-bubble {
   padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 0.95rem; /* 稍微精细化字号 */
   line-height: 1.6;
   word-wrap: break-word;
   white-space: pre-wrap;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  color: #334155; /* 统一使用深石板灰作为主要阅读色 */
 }
 
+/* AI 回复气泡：极简灰白底色，像日志卡片 */
 .is-ai .message-bubble {
-  background-color: #f4f4f5;
-  color: #303133;
-  border-top-left-radius: 2px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-top-left-radius: 2px; /* 保留一点方向性暗示 */
 }
 
+/* User 指令气泡：极其微弱的浅蓝底色，表明主动输入属性 */
 .is-user .message-bubble {
-  background-color: #e1f3d8;
-  color: #1a4a04;
+  background-color: #f0f9ff;
+  border: 1px solid #e0f2fe;
   border-top-right-radius: 2px;
 }
 
-/* 简单的打字机动画 */
+/* 打字机动画：弱化视觉抢夺 */
 .typing-indicator {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 16px 20px;
+  padding: 12px 16px;
+  background-color: transparent !important;
+  border: none !important;
 }
 
 .typing-indicator span {
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  background-color: #909399;
+  width: 5px;
+  height: 5px;
+  background-color: #cbd5e1; /* 极浅的灰色 */
   border-radius: 50%;
   animation: typing 1.4s infinite ease-in-out both;
 }
+
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
 @keyframes typing {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
+  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
 }
 </style>

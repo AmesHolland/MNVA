@@ -19,6 +19,159 @@ let resizeObserver = null
 // 【核心缓存】：用于存储渲染时最原始的 series data，方便后续刷选对比
 let originalSeriesData = []
 
+/**
+ * 将原始的扁平化海洋新闻态势数据转换为 ECharts 山脊图 Option
+ * @param {Array} rawData - 原始数据
+ * @returns {Object} ECharts Option
+ */
+function buildRidgelineOption(rawData) {
+  if (!rawData || rawData.length === 0) return {};
+
+  const dates = [...new Set(rawData.map(item => item.date))].sort();
+  const topics = [...new Set(rawData.map(item => item.topic_name))];
+
+  // --- 修改 1：在 dataMap 中不仅存 count，还要把 source_ids 存下来 ---
+  const dataMap = {};
+  topics.forEach(topic => { dataMap[topic] = {}; });
+
+  rawData.forEach(item => {
+    dataMap[item.topic_name][item.date] = {
+      count: item.count || 1,
+      source_ids: item.source_ids || [] // 🌟 把原始新闻的 ID 数组带过来
+    };
+  });
+
+  // 🌟 关键参数：山峰的间距。
+  // 注意：如果你的新闻篇数普遍较小（比如 1~5 篇），这个偏移量千万别设太大（如 15），否则山峰之间够不着，就不会有重叠效果。
+  // 建议将此值设置为你数据平均最大值的 1/2 或 1/3，山峰就会漂亮地交错在一起。
+  const OVERLAP_OFFSET = 1;
+  const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc'];
+
+  const series = [];
+
+  topics.forEach((topic, index) => {
+    // 越往后的主题，基准线越高
+    const baseOffset = index * OVERLAP_OFFSET;
+    // const topicData = dates.map(date => dataMap[topic][date] || 0);
+
+    // 1. 构造【隐形基座】系列
+    series.push({
+      name: `${topic}_base`,
+      type: 'line',
+      stack: `group_${topic}`,
+      data: dates.map((_, i) => {
+        if (i === 0) {
+          return {
+            value: baseOffset,
+            // 🌟 【修复核心】：强行给第一个点一个圆点作为文字锚点，并使其完全透明！
+            symbol: 'circle',
+            symbolSize: 1,
+            itemStyle: { color: 'transparent' },
+
+            label: {
+              show: true,
+              position: [10, -20], // 这里的偏移量你可以根据实际视觉效果微调
+              formatter: topic,
+              color: '#333',
+              fontSize: 11,
+              fontWeight: 'bold',
+              backgroundColor: 'rgba(255, 255, 255, 0.7)',
+              padding: [2, 4],
+              borderRadius: 3
+            }
+          };
+        }
+        return baseOffset;
+      }),
+      // 其他点依然保持无图形，保证性能
+      symbol: 'none',
+      lineStyle: { width: 0 },
+      tooltip: { show: false },
+      animation: false
+    });
+    // 2. 构造【真实山峰】系列
+    const topicData = dates.map(date => {
+      const info = dataMap[topic][date];
+      if (info && info.count > 0) {
+        return {
+          value: info.count,
+          source_ids: info.source_ids // 🌟 核心：将 ID 数组藏在数据对象里
+        };
+      }
+      return 0; // 没有数据的日子补 0
+    });
+
+    series.push({
+      name: topic,
+      type: 'line',
+      stack: `group_${topic}`,
+      data: topicData,
+
+      // 🌟 【交互核心】：替换掉原来的 symbol: 'none'
+      showSymbol: false, // 平时隐藏折点，保持曲线顺滑
+      symbol: 'circle',  // 鼠标 Hover 时，显示一个圆点作为点击热区！
+      symbolSize: 8,     // Hover 时圆点的大小
+
+      smooth: true,
+      z: topics.length - index,
+      lineStyle: { color: '#fff', width: 1.5 },
+      areaStyle: {
+        color: colors[index % colors.length],
+        opacity: 0.85
+      }
+    });
+  });
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      formatter: function (params) {
+        // 过滤掉我们用于垫高的 _base 系列，且过滤掉没有真实数据的点
+        const validParams = params.filter(p => !p.seriesName.endsWith('_base') && (p.value > 0 || p.data?.value > 0));
+        if (validParams.length === 0) return '';
+
+        let html = `<div style="font-weight:bold;margin-bottom:5px;">${params[0].axisValue}</div>`;
+        let totalSources = 0; // 统计这个时间点所有主题的新闻总数
+
+        [...validParams].reverse().forEach(param => {
+           // 处理可能携带对象的 data
+           const actualValue = param.data?.value !== undefined ? param.data.value : param.value;
+           const sourceIds = param.data?.source_ids || [];
+           totalSources += sourceIds.length;
+
+           html += `${param.marker} ${param.seriesName}: <b>${actualValue}</b> 篇<br/>`;
+        });
+
+        // 🌟 如果存在源数据，给予醒目的点击引导
+        if (totalSources > 0) {
+          html += `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #ebeef5; color:#409EFF; font-size:12px; font-weight:bold;">
+                     Click to see the Source News
+                   </div>`;
+        }
+        return html;
+      }
+    },
+    grid: { top: 30, bottom: 30, left: 0, right: 0 },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: dates,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#999' }
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      min: 'dataMin'
+    },
+    series: series
+  };
+}
+
 const renderChart = async () => {
   if (!chartInstance.value || !props.chartData || props.chartData.length === 0) return
   chartInstance.value.showLoading()
@@ -49,7 +202,7 @@ const renderChart = async () => {
           <div style="font-weight:bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;">
             🗓️ ${date} | ${topic} (intensity: ${intensity})
           </div>
-          <div style="max-width: 250px; white-space: normal; line-height: 1.4;">${summary}</div>
+          <div style="white-space: normal; line-height: 1.4;">${summary}</div>
           <div style="font-size: 12px; color: #666; margin-top: 5px;">📍 [${lat.toFixed(2)}, ${lon.toFixed(2)}]</div>
         `;
         if (source_ids && source_ids.length > 0) {
@@ -201,7 +354,12 @@ const renderChart = async () => {
       const res = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json')
       echarts.registerMap('world', await res.json())
     }
-    const colorMap = { 'Patrol': '#409EFF', 'Drill': '#E6A23C', 'Conflict': '#F56C6C', 'Statement': '#909399', 'Visit': '#67C23A' }
+    const colorMap = { 'Technology': '#409EFF',
+      'Politics': '#E6A23C',
+      'Military': '#F56C6C',
+      'Governance': '#909399',
+      'Environment': '#67C23A',
+      'Resources': '#eacc69'}
 
     // 【修改】：缓存原始数据，固定 source_ids 为索引 5
     originalSeriesData = props.chartData.map(item => ({
@@ -215,7 +373,7 @@ const renderChart = async () => {
         trigger: 'item',
         formatter: (p) => {
           const [lon, lat, type, summary, date, source_ids] = p.value
-          let tip = `<b>${p.name}</b><br/>时间: ${date}<br/>行为: <span style="color:${colorMap[type]}">${type}</span><br/>摘要: ${summary}`
+          let tip = `<b>${p.name}</b><br/>Time: ${date}<br/>Action: <span style="color:${colorMap[type]}">${type}</span><br/>Summary: ${summary}`
           if (source_ids && source_ids.length > 0) {
             tip += `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #ebeef5; color:#409EFF; font-size:12px; font-weight:bold;">👆Click the scatter point to view ${source_ids.length} pieces of original intelligence</div>`
           }
@@ -223,7 +381,7 @@ const renderChart = async () => {
         }
       },
       geo: { map: 'world', roam: true, zoom: 3, center: originalSeriesData.length > 0 ? [originalSeriesData[0].value[0], originalSeriesData[0].value[1]] : null, itemStyle: { areaColor: '#e4e7ed', borderColor: '#ffffff' } },
-      series: [{ name: '具体行动', type: 'effectScatter', coordinateSystem: 'geo', data: originalSeriesData, symbolSize: 12, showEffectOn: 'emphasis', rippleEffect: { scale: 4 } }]
+      series: [{ name: 'Action', type: 'effectScatter', coordinateSystem: 'geo', data: originalSeriesData, symbolSize: 12, showEffectOn: 'emphasis', rippleEffect: { scale: 4 } }]
     }
   }
   // ==========================================
@@ -279,6 +437,120 @@ const renderChart = async () => {
       }]
     }
   }
+  else if (props.chartType === 'ridgeline_plot') {
+    // 调用我们刚写的函数
+    option = buildRidgelineOption(props.chartData);
+  }
+  // 假设你把 globalData 和 deepDiveData 都传进来了
+  else if (props.chartType === 'unified_map') {
+  if (!echarts.getMap('world')) {
+      const res = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json')
+      echarts.registerMap('world', await res.json())
+  }
+
+  const globalData = props.chartData.globalData || [];
+  const deepDiveData = props.chartData.deepDiveData || [];
+
+  // 1. 整理全局底噪数据 (Context)
+  const globalSeriesData = globalData.map(item => ({
+    name: item.topic_name,
+    value: [item.lon, item.lat, item.intensity, item.topic_name, item.summary, item.source_ids || [], item.date],
+    // 【关键】：作为背景，颜色要弱化，透明度调低
+    itemStyle: { color: '#5a94ec', opacity: 0.5, shadowBlur: 0 }
+  }));
+
+  // 2. 整理微观轨迹数据 (Focus)
+  const colorMap = { 'Technology': '#409EFF', 'Politics': '#E6A23C', 'Military': '#F56C6C', 'Governance': '#909399', 'Environment': '#67C23A', 'Resources': '#eacc69'};
+  const deepDiveSeriesData = deepDiveData.map(item => ({
+    name: item.name,
+    value: [item.lon, item.lat, item.type, item.summary, item.date, item.source_ids || []],
+    // 【关键】：作为焦点，颜色要极其鲜艳，且带发光和涟漪特效
+    itemStyle: { color: colorMap[item.type] || '#409EFF', opacity: 1, shadowBlur: 10 }
+  }));
+
+  // 3. （可选超神操作）将微观实体的点连成轨迹线
+  const trajectoryLines = [];
+  for (let i = 0; i < deepDiveSeriesData.length - 1; i++) {
+    trajectoryLines.push({
+      coords: [
+        [deepDiveSeriesData[i].value[0], deepDiveSeriesData[i].value[1]],
+        [deepDiveSeriesData[i+1].value[0], deepDiveSeriesData[i+1].value[1]]
+      ]
+    });
+  }
+
+  option = {
+    // 【核心交互】：开启 ECharts 原生图例，用户点击图例就能隐藏/显示对应图层！
+    legend: {
+      show: true,
+      top: 10,
+      left: 'center',
+      data: ['Macro Context (Global)', 'Micro Trajectory (Entity)'],
+      textStyle: { fontWeight: 'bold' }
+    },
+    tooltip: { /* 根据 params.seriesName 做不同的 tooltip 渲染即可 */ },
+    // 【新增 1】：添加右上方工具栏，开启矩形和多边形选框
+        toolbox: {
+          show: true,
+          left: 'left', // 水平位置：可选 'left'/'center'/'right'、像素值（如 20）、百分比（如 '10%'）
+          top: 'top',    // 垂直位置：可选 'top'/'middle'/'bottom'、像素值（如 20）、百分比（如 '10%'）
+          feature: {
+            brush: {
+              type: ['rect', 'polygon', 'keep','clear'], // 允许矩形、多边形选框和清除按钮
+              // title: { rect: '矩形圈选', polygon: '自由圈选', clear: '清除圈选' }
+            }
+          },
+          iconStyle: { borderColor: '#409EFF' } // 契合你的 UI 主色调
+        },
+
+        // 【新增 2】：配置刷选行为，绑定到 geo 坐标系
+        brush: {
+          geoIndex: 'all', // 告诉刷选组件它在针对地理坐标系操作
+          brushLink: 'all',
+          brushMode: 'multiple', // 【核心破局点】：开启多选模式！
+          outOfBrush: {
+            colorAlpha: 0.2 // 框选区域外的数据点变暗（自带 Dimming 效果！）
+          },
+          brushStyle: {
+            borderWidth: 1,
+            color: 'rgba(64,158,255,0.2)', // 选框内部的颜色
+            borderColor: '#409EFF'
+          }
+        },
+    geo: {
+      map: 'world', roam: true, zoom: 1.5,
+      itemStyle: { areaColor: '#e4e7ed', borderColor: '#ffffff' }
+    },
+    series: [
+      {
+        name: 'Macro Context (Global)', // 对应图例名字
+        type: 'scatter', // 背景用普通散点即可，不要用 effectScatter 抢戏
+        coordinateSystem: 'geo',
+        data: globalSeriesData,
+        symbolSize: (val) => Math.max(5, Math.min(val[2] * 2, 15))
+      },
+      {
+        name: 'Micro Trajectory (Entity)', // 对应图例名字
+        type: 'effectScatter', // 焦点实体用涟漪散点
+        coordinateSystem: 'geo',
+        data: deepDiveSeriesData,
+        symbolSize: 12,
+        showEffectOn: 'render',
+        rippleEffect: { scale: 4, brushType: 'stroke' },
+        zlevel: 2 // 确保微观点永远覆盖在宏观点上面
+      },
+      {
+        name: 'Micro Trajectory (Entity)', // 名字一样，和散点共享同一个图例开关
+        type: 'lines',
+        coordinateSystem: 'geo',
+        data: trajectoryLines,
+        lineStyle: { color: '#F56C6C', width: 2, type: 'dashed', opacity: 0.6 },
+        zlevel: 1
+      }
+    ]
+  };
+}
+
 
   chartInstance.value.setOption(option, true)
   chartInstance.value.hideLoading()
@@ -290,6 +562,8 @@ const renderChart = async () => {
     if (params.seriesType === 'effectScatter' || params.seriesType === 'scatter') {
       sIds = params.value[5] // 两张地图均已对齐 source_ids 存放在 index 5
     } else if (params.dataType === 'edge') {
+      sIds = params.data.source_ids
+    } else {
       sIds = params.data.source_ids
     }
     if (sIds && sIds.length > 0) {
@@ -487,7 +761,7 @@ onUnmounted(() => { if (resizeObserver) resizeObserver.disconnect(); chartInstan
 }
 
 .control-btn.active {
-  background-color: #409EFF;
+  background-color: #375fc9;
   color: #ffffff;
   font-weight: bold;
 }

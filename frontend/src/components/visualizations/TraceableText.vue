@@ -90,7 +90,7 @@ const isClaimDimmed = (claim) => {
 
 <style scoped>
 .traceable-paragraph {
-  font-size: 1rem;
+  font-size: 12px;
   line-height: 1.8;
   color: #333;
   text-align: justify;
@@ -99,6 +99,7 @@ const isClaimDimmed = (claim) => {
 /* 句子原样式与过渡动画 */
 .claim-sentence {
   display: inline;
+  font-size: 14px;
   transition: opacity 0.4s ease, color 0.4s ease, background-color 0.4s ease;
 }
 

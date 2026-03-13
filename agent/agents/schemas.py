@@ -27,6 +27,8 @@ class ResearchState(TypedDict):
     spatiotemporal_blueprint : dict
     # 【新增】任务历史，用于存储多次分析的结果
     task_history: List[Dict[str, Any]]
+    dataset_id: int
+    output_language : str
 
 # === 整合节点的溯源输出模型 ===
 class Claim(BaseModel):
@@ -61,16 +63,77 @@ class SpatiotemporalBlueprint(BaseModel):
     overall_narrative: str = Field(description="对整个事件时空演变轨迹的宏观定性总结（50字以内）")
     phases: List[EvolutionPhase] = Field(description="按时间顺序排列的演化阶段列表，通常为 2 到 4 个阶段")
 
-# ==========================================
-# 1. 定义规划蓝图的 Pydantic 模型 (保持不变)
-# ==========================================
+# # ==========================================
+# # 1. 定义规划蓝图的 Pydantic 模型 (保持不变)
+# # ==========================================
+# class TaskNode(BaseModel):
+#     task_id: int = Field(description="任务的唯一执行序号")
+#     agent: str = Field(description="需要调用的探员名称，例如 'Global_Monitor_Agent'")
+#     action: str = Field(description="该任务的具体执行目标和指令")
+#     args: Dict[str, Any] = Field(description="传递给探员的具体参数，必须包含 target_phase_ids")
+#     dependency: Optional[Union[int, List[int]]] = Field(description="该任务依赖的前置 task_id，如果没有则为 null")
+#
+# class ExecutionPlan(BaseModel):
+#     total_plan_logic: str = Field(description="简述整体调度逻辑，尤其是如何根据时空蓝图进行动态路由的（1-2句话）")
+#     tasks: List[TaskNode] = Field(description="按执行顺序排列的任务列表")
+
+from typing import List, Dict, Any, Literal
+from pydantic import BaseModel, Field, model_validator
+
+
 class TaskNode(BaseModel):
-    task_id: int = Field(description="任务的唯一执行序号")
-    agent: str = Field(description="需要调用的探员名称，例如 'Global_Monitor_Agent'")
-    action: str = Field(description="该任务的具体执行目标和指令")
-    args: Dict[str, Any] = Field(description="传递给探员的具体参数，必须包含 target_phase_ids")
-    dependency: Optional[Union[int, List[int]]] = Field(description="该任务依赖的前置 task_id，如果没有则为 null")
+    task_id: str = Field(description="Unique task id, e.g. 'global_monitor_phase_1'")
+    agent: Literal[
+        "Global_Monitor_Agent",
+        "Deep_Dive_Agent",
+        "Relation_Miner_Agent"
+    ] = Field(description="Name of the assigned sub-agent")
+
+    action: str = Field(description="Concrete execution goal of the task")
+
+    target_phase_ids: List[int] = Field(
+        default_factory=list,
+        description="Phase IDs selected from the spatiotemporal blueprint"
+    )
+
+    args: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Agent-specific arguments only; do not put dependency or phase routing here"
+    )
+
+    dependency: List[str] = Field(
+        default_factory=list,
+        description="IDs of prerequisite tasks whose structured outputs are required"
+    )
+
+    # @model_validator(mode="after")
+    # def validate_task(self):
+    #     if self.task_id in self.dependency:
+    #         raise ValueError("A task cannot depend on itself.")
+    #
+    #     if self.agent == "Global_Monitor_Agent":
+    #         if "query" not in self.args:
+    #             raise ValueError("Global_Monitor_Agent requires args.query")
+    #
+    #     elif self.agent == "Deep_Dive_Agent":
+    #         if "target_entity" not in self.args:
+    #             raise ValueError("Deep_Dive_Agent requires args.target_entity")
+    #
+    #     elif self.agent == "Relation_Miner_Agent":
+    #         focus_entities = self.args.get("focus_entities")
+    #         if not isinstance(focus_entities, list) or len(focus_entities) < 2:
+    #             raise ValueError("Relation_Miner_Agent requires args.focus_entities with at least 2 entities")
+    #
+    #     if not self.target_phase_ids:
+    #         raise ValueError("Every task must include non-empty target_phase_ids")
+    #
+    #     return self
+
 
 class ExecutionPlan(BaseModel):
-    total_plan_logic: str = Field(description="简述整体调度逻辑，尤其是如何根据时空蓝图进行动态路由的（1-2句话）")
-    tasks: List[TaskNode] = Field(description="按执行顺序排列的任务列表")
+    total_plan_logic: str = Field(
+        description="Brief explanation of the overall routing logic, especially how tasks are assigned to phase slices and dependencies"
+    )
+    tasks: List[TaskNode] = Field(
+        description="A list of phase-aware tasks that can be executed as a DAG"
+    )

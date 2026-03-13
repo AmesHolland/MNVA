@@ -83,9 +83,9 @@ const renderTimeline = () => {
 
   // 1. 生成 mock 背景数据（统一用时间戳）
   const mockBackgroundData = []
-  let baseDate = new Date('2015-01-01').getTime()
+  let baseDate = new Date('2022-01-01').getTime()
   const oneDay = 24 * 3600 * 1000
-  for (let i = 0; i < 365 * 11; i++) {
+  for (let i = 0; i < 365 * 5; i++) {
     const currentTime = baseDate + i * oneDay
     const volume = Math.max(10, Math.floor(Math.random() * 50) + (i % 100 === 0 ? 200 : 0))
     mockBackgroundData.push([currentTime, volume])

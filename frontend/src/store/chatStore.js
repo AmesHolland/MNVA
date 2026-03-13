@@ -26,6 +26,9 @@ export const useChatStore = defineStore('chat', () => {
     visualizations: []
   })
   
+  // 【新增】：专门用于存储预览阶段的地图数据
+  const previewData = ref(null)
+  
   const taskHistory = ref([])
 
   // 溯源抽屉状态
@@ -33,7 +36,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // 刷选状态
   const brushState = ref({ timeRange: null, spatialLabels: [] })
-  const inputText = ref('帮我分析2025年第四季度美国在深海采矿方面的动态')
+  const inputText = ref('Help me analyze the developments regarding deep-sea mining in the United States in the fourth quarter of 2025.')
   const pendingSandboxContext = ref(null)
 
   // === 2. 持久化逻辑 (解决问题 1) ===
@@ -127,12 +130,10 @@ export const useChatStore = defineStore('chat', () => {
       const d1 = new Date(timeRange[0]); startTime = `${d1.getFullYear()}-${String(d1.getMonth()+1).padStart(2,'0')}-${String(d1.getDate()).padStart(2,'0')}`
       const d2 = new Date(timeRange[1]); endTime = `${d2.getFullYear()}-${String(d2.getMonth()+1).padStart(2,'0')}-${String(d2.getDate()).padStart(2,'0')}`
     }
-
-    let promptText = `请针对我圈选的范围进行下钻分析：\n`
-    if (startTime) promptText += `- 时间范围：${startTime} 至 ${endTime}\n`
-    if (labels.length > 0) promptText += `- 空间/实体：${labels.join(', ')}\n`
-    promptText += `\n请重点关注：`
-
+    let promptText = `Please perform a drill-down analysis for the range I have selected:\n`
+    if (startTime) promptText += `- Time range: ${startTime} to ${endTime}\n`
+    if (labels.length > 0) promptText += `- Spatial/Entity: ${labels.join(', ')}\n`
+    promptText += `\nPlease focus on the following key points:`
     inputText.value = promptText
     pendingSandboxContext.value = {
       is_sandbox_request: true,
@@ -163,7 +164,7 @@ export const useChatStore = defineStore('chat', () => {
          // 理论上 sendMessage 会创建，但为了健壮性
          return 
       }
-      
+
       // 往 steps 数组里追加节点状态
       // 去重：如果最后一个 step 就是当前 node，就不加了
       const lastStep = lastMsg.steps[lastMsg.steps.length - 1]
@@ -173,6 +174,30 @@ export const useChatStore = defineStore('chat', () => {
           timestamp: Date.now(),
           status: 'loading' // 刚收到是 loading，收到下一个时把上一个置为 done? 简化起见，收到即视为进入该节点
         })
+      }
+    }
+    // 【新增】：处理地图预览事件
+    else if (eventName === 'data_profile') {
+      console.log("Received map preview data:", data)
+      previewData.value = data["preview_map_data"]
+      updateBrushState(data["time_range_arr"])
+      // 【关键修复】：同时更新 analysisResults，让 SpatiotemporalNavigator 有数据可渲染
+      // 我们构造一个虚拟的 Global_Monitor_Agent 任务数据，因为 Navigator 通常读取 geo_dynamic_data
+      if (data && data.length > 0) {
+        analysisResults.value = {
+          // 标记这是一个预览状态，Dashboard 可以据此决定是否显示 Split/Narrative 布局
+          isPreview: true, 
+          tasks: {
+            "preview": {
+              agent_name: "Global_Monitor_Agent",
+              visualization_data: {
+                geo_dynamic_data: data // 将预览数据塞入标准字段
+              }
+            }
+          },
+          // 构造一个空的 report 结构，防止报错
+          report: null 
+        }
       }
     }
     else if (eventName === 'interrupt') {
@@ -198,6 +223,8 @@ export const useChatStore = defineStore('chat', () => {
       // 处理可视化结果
       if (data.is_new_visual_result) {
         analysisResults.value = data.results
+        // 深度分析完成后，清空预览数据，让主视图接管
+        previewData.value = null 
       }
       
       // 插入最终回答文本
@@ -234,6 +261,11 @@ export const useChatStore = defineStore('chat', () => {
       steps: [], // 存放节点流
       isExpanded: true // 默认展开，或者 false
     })
+    
+    // 3. 清空上一轮的预览数据，准备接收新的
+    previewData.value = null
+    // 同时重置 analysisResults，避免残留上一轮的图表
+    analysisResults.value = { report: null, tasks: {} }
     
     isGenerating.value = true
 
@@ -310,6 +342,6 @@ export const useChatStore = defineStore('chat', () => {
     evidenceState, openEvidence, closeEvidence,
     brushState, updateBrushState, clearBrushState, resolveMapBrush,
     formatDate, inputText, pendingSandboxContext, prepareSandboxAnalysis,
-    taskHistory, switchTask
+    taskHistory, switchTask, previewData
   }
 })

@@ -27,6 +27,19 @@ def generate_sse_stream(graph_app, inputs, config):
             for node_name, state_update in chunk.items():
                 executed_nodes.append(node_name)  # 记录节点名
                 yield f"event: node_progress\ndata: {json.dumps({'node': node_name}, ensure_ascii=False)}\n\n"
+                
+                # 【核心修改】：如果 data_profiling 节点执行完毕，立即提取预览数据并推送
+                if node_name == "data_profiling":
+                    try:
+                        # state_update 的结构是节点的返回值：{"analysis_results": {"data_profile": {...}}}
+                        analysis_res = state_update.get("analysis_results", {})
+                        data_profile = analysis_res.get("data_profile", {})
+                        # preview_data = data_profile.get("preview_map_data", [])
+                        
+                        if data_profile:
+                            yield f"event: data_profile\ndata: {json.dumps(data_profile, ensure_ascii=False)}\n\n"
+                    except Exception as e:
+                        print(f"Error extracting preview data: {e}")
 
         # 图运行暂停（或结束）后，检查当前状态
         state_snapshot = graph_app.get_state(config)
@@ -126,6 +139,8 @@ def chat():
             "current_phase": "",
             "iteration_count": 0,
             "research_list": [],
+            "dataset_id": 1,
+            "output_language": "Simplified Chinese", # 或 "English", "Japanese"
             "task_history": [] # 初始化任务历史
         }
         inputs = initial_state
@@ -190,6 +205,7 @@ def geo_resolve():
     
     请直接输出最核心的 1-3 个地理名称（例如：'南海', '钓鱼岛', '关岛'），不要输出任何解释性文字。
     返回格式必须是 JSON 列表，例如: ["Region A", "Region B"]
+    并且结果要以英文返回
     """
     
     try:

@@ -40,7 +40,7 @@ parser = JsonOutputParser(pydantic_object=RelationExtractionOutput)
 
 prompt = PromptTemplate(
     template=RELATION_MINER_PROMPT,
-    input_variables=["focus_entities", "news_context"],
+    input_variables=["focus_entities", "news_context", "output_language"],
     partial_variables={"format_instructions": parser.get_format_instructions()}
 )
 
@@ -53,7 +53,7 @@ from collections import defaultdict
 
 # --- 核心节点函数 ---
 # 【新增】：接收 blueprint_context
-def relation_miner_agent(entities, news_list, blueprint_context=""):
+def relation_miner_agent(entities, news_list, blueprint_context="", output_language="English"):
     """
     Extracts relations and builds a graph structure with full provenance.
     """
@@ -69,7 +69,8 @@ def relation_miner_agent(entities, news_list, blueprint_context=""):
         raw_result = relation_chain.invoke({
             "focus_entities": ", ".join(entities),
             "news_context": news_context,
-            "blueprint_context": blueprint_context  # 【新增】：注入蓝图
+            "blueprint_context": blueprint_context,  # 【新增】：注入蓝图
+            "output_language":output_language
         })
     except Exception as e:
         print(f"❌ Relation Miner 运行出错: {e}")

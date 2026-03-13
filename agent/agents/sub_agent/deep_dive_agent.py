@@ -30,7 +30,8 @@ class EventNode(BaseModel):
     location_name: str = Field(description="Specific location name or region name.")
     geo_lat: Optional[float] = Field(description="Latitude of the location, if inferable. Otherwise null.")
     geo_lon: Optional[float] = Field(description="Longitude of the location, if inferable. Otherwise null.")
-    action_type: str = Field(description="Category: 'Patrol', 'Drill', 'Statement', 'Conflict', 'Visit'.")
+    # 建议将字段名从 action_type 改为 domain 或 category
+    domain: str = Field(description="The core thematic domain of this event. Must be exactly one of: 'Military', 'Technology', 'Politics', 'Environment', 'Governance', 'Resources'.")
     summary: str = Field(description="Concise summary of the action (max 10 words).")
     scores: IntensityScore = Field(description="Intensity assessment of this specific event.")
     source_ids: List[str] = Field(description="List of exact DOC_IDs from the input text that describe this event. Like ['001']")
@@ -58,7 +59,7 @@ parser = JsonOutputParser(pydantic_object=DeepDiveOutput)
 prompt = PromptTemplate(
     template=DEEP_DIVE_PROMPT,
     # 【新增】：在 input_variables 中加入 blueprint_context 和 query
-    input_variables=["target_entity", "news_context", "query", "blueprint_context"],
+    input_variables=["target_entity", "news_context", "query", "blueprint_context", "output_language"],
     partial_variables={"format_instructions": parser.get_format_instructions()}
 )
 
@@ -66,7 +67,7 @@ deep_dive_chain = prompt | llm | parser
 
 
 # --- 核心节点函数 ---
-def deep_dive_agent(entity, query, docs, blueprint_context=""):
+def deep_dive_agent(entity, query, docs, blueprint_context="", output_language="English"):
     """
     LangGraph Node: Performs deep dive analysis on a specific entity to extract its spatiotemporal storyline.
     """
@@ -82,7 +83,8 @@ def deep_dive_agent(entity, query, docs, blueprint_context=""):
             "target_entity": entity,
             "news_context": news_context,
             "query": query,
-            "blueprint_context": blueprint_context  # 【新增】：注入蓝图
+            "blueprint_context": blueprint_context,  # 【新增】：注入蓝图
+            "output_language": output_language
         })
     except Exception as e:
         print(f"❌ Deep Dive 运行出错: {e}")
@@ -104,7 +106,7 @@ def deep_dive_agent(entity, query, docs, blueprint_context=""):
             "lat": e['geo_lat'],
             "lon": e['geo_lon'],
             "name": e['location_name'],
-            "type": e['action_type'],
+            "type": e['domain'],
             "summary": e['summary'],
             "intensity": e['scores']['military'],  # 默认用军事烈度决定点的大小
             "source_ids": e['source_ids']
@@ -117,7 +119,7 @@ def deep_dive_agent(entity, query, docs, blueprint_context=""):
         {
             "start": e['start_date'],  # 开始时间
             "end": e['end_date'],  # 结束时间
-            "category": e['action_type'],  # Y轴分类
+            "category": e['domain'],  # Y轴分类
             "intensity": e['scores']['military'],  # 烈度（用于颜色深浅）
             "summary": e['summary'],
             "source_ids": e['source_ids']
