@@ -46,10 +46,10 @@ llm_qw_quick = ChatOpenAI(
         api_key=QWEN_API_KEY,  # 硅基流动API Key
         base_url=QWEN_BASE_URL,  # 对话接口完整URL（你提供的无需补全）
         model="qwen3.5-plus",  # 硅基流动对话模型名
-        temperature=0.0,  # 随机性
+        temperature=0.3,  # 随机性
         max_retries=3,  # 重试次数
         # timeout=60,  # 超时时间
-        model_kwargs=model_kwargs
+        # model_kwargs=model_kwargs
     )
 
 llm_ds = ChatOpenAI(

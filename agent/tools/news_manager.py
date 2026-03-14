@@ -1,3 +1,4 @@
+import json
 from typing import List
 
 
@@ -134,4 +135,11 @@ def get_news_by_id(news_id_list : List[str]):
         }
     ]
 
+    # with open("BBNJ-news.json", 'r', encoding='utf-8') as f:
+    #     # 解析JSON数据为Python对象（列表/字典）
+    #     data = json.load(f)
+
+
     return news_list
+
+

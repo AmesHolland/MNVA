@@ -569,11 +569,11 @@ def data_retrieval_node(state: dict):
     print("Yes or no")
     if use_full_dataset:
         print("use_full_dataset")
-        # news_list = fetch_all_news_by_dataset_id(
-        #     dataset_id=dataset_id,
-        #     date_from=date_from,
-        #     date_to=date_to,
-        # )
+        news_list = fetch_all_news_by_dataset_id(
+            dataset_id=dataset_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
         news_list = get_news_by_id([])
         retrieval_meta = {
             "mode": "full_dataset",
