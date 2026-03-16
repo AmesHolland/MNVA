@@ -1,5 +1,8 @@
 import json
 from typing import List
+import json
+from datetime import datetime
+import hashlib
 
 
 def get_news_by_id(news_id_list : List[str]):
@@ -135,11 +138,97 @@ def get_news_by_id(news_id_list : List[str]):
         }
     ]
 
-    # with open("BBNJ-news.json", 'r', encoding='utf-8') as f:
-    #     # 解析JSON数据为Python对象（列表/字典）
-    #     data = json.load(f)
-
 
     return news_list
 
+def load_data(filepath="BBNJ-news.json"):
+    """
+    加载本地 JSON 数据，并为每条数据动态生成全局唯一的溯源 ID (DOC_ID)
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            raw_data = json.load(f)
 
+        processed_data = []
+        for index, item in enumerate(raw_data):
+            # 如果原始数据没有 id，利用标题和发布日期生成一个稳定的哈希值作为 DOC_ID
+            if "DOC_ID" not in item:
+
+                item["DOC_ID"] = f"{index + 1:03d}"
+            processed_data.append(item)
+
+        return processed_data
+    except Exception as e:
+        print(f"Failed to load data: {e}")
+        return []
+
+
+def retrieve_news(start_date=None, end_date=None, keywords=None, filepath="agent/tools/BBNJ-news.json"):
+    """
+    执行带时间和关键词约束的本地检索
+    :param start_date: str, 格式 "YYYY-MM-DD"
+    :param end_date: str, 格式 "YYYY-MM-DD"
+    :param keywords: list of str, 例如 ["菲律宾", "海洋科学"]
+    """
+    all_data = load_data(filepath)
+    filtered_data = []
+
+    # 1. 预处理时间对象，方便精确比较
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+
+    for item in all_data:
+        # ==========================
+        # 过滤器 1：时间范围约束
+        # ==========================
+        item_date_str = item.get("publish_date", "")
+        if start_dt or end_dt:
+            if not item_date_str:
+                continue  # 如果要求按时间过滤但该新闻没日期，直接丢弃
+            try:
+                item_dt = datetime.strptime(item_date_str, "%Y-%m-%d")
+                if start_dt and item_dt < start_dt:
+                    continue
+                if end_dt and item_dt > end_dt:
+                    continue
+            except ValueError:
+                # 兼容格式不规范的脏数据
+                continue
+
+        # ==========================
+        # 过滤器 2：关键词匹配 (Semantic/Keyword Filter)
+        # ==========================
+        if keywords and isinstance(keywords, list) and len(keywords) > 0:
+            # 将新闻的标题、内容、概述和原生关键词列表拼接在一起，转化为小写进行检索
+            search_pool = (
+                    item.get("title", "") +
+                    item.get("content", "") +
+                    item.get("overview", "") +
+                    " ".join(item.get("keywords", []))
+            ).lower()
+
+            # 采用 OR 逻辑：只要命中列表中的任意一个关键词，就视作召回成功
+            # 如果你想极其严格，可以把 any 改成 all (必须同时包含所有关键词)
+            match = any(kw.lower() in search_pool for kw in keywords)
+
+            if not match:
+                continue
+
+        # 通过所有过滤器的考验，加入结果集
+        filtered_data.append(item)
+
+    return filtered_data
+
+
+# ================= 单元测试 =================
+if __name__ == "__main__":
+    # 模拟 LangGraph 中的 planning_node 或 sandbox_request 传来的参数
+    test_results = retrieve_news(
+        start_date="2025-09-01",
+        end_date="2025-09-30",
+        keywords=["技术转让", "群岛国家"]
+    )
+
+    print(f"Retrieved {len(test_results)} articles.")
+    if test_results:
+        print(f"Sample DOC_ID: {test_results[0]['DOC_ID']}")

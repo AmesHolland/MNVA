@@ -36,17 +36,29 @@ class Claim(BaseModel):
     is_direct_quote: bool = Field(description="如果是直接截取新闻原话为 True，自行归纳总结为 False。")
     source_ids: List[str] = Field(description="支撑该句话的具体新闻 DOC_ID 列表。必须从输入的上下文中提取，严禁捏造。")
 
-class ReportSection(BaseModel):
-    subtitle: str = Field(description="该章节的小标题")
-    content_claims: List[Claim] = Field(description="该章节的正文，必须拆解为多个逻辑连贯的论点/句子，每个句子必须附带 source_ids。")
-    ref_task_ids: List[str] = Field(description="该章节分析所依赖的子任务 ID 列表 (例如 ['1', '2'])，用于前端关联图表。")
+from pydantic import BaseModel, Field
+from typing import List
 
+# 🌟 终极溯源声明块
+class ProvenanceClaim(BaseModel):
+    content: str = Field(description="The analytical statement, fact, or strategic insight.")
+    source_subtask: str = Field(description="The exact task_id (e.g., 'task_1') that provided this information.")
+    phase_name: str = Field(description="The name of the spatiotemporal phase this content belongs to (e.g., 'Phase 1: Incubation'). Use 'Global' if it applies to the whole timeline.")
+    is_subjective_insight: bool = Field(description="True if this is an AI strategic insight/prediction. False if it is an objective fact.")
+    source_ids: List[str] = Field(description="List of exact DOC_IDs supporting this claim. Empty if is_subjective_insight is True.")
+
+# 报告章节
+class ReportSection(BaseModel):
+    section_title: str = Field(description="Title of the section (e.g., 'Phase 2: Escalation in the South China Sea').")
+    claims: List[ProvenanceClaim] = Field(description="A coherent sequence of claims that form the narrative of this section.")
+
+
+# 完整报告
 class FinalReport(BaseModel):
-    report_title: str = Field(description="海洋态势深度分析报告标题")
-    executive_summary: str = Field(description="高度概括的执行摘要")
-    executive_source_ids: List[str] = Field(description="支撑执行摘要的核心 DOC_ID 列表")
-    sections: List[ReportSection] = Field(description="报告的主体章节")
-    conclusion: str = Field(description="对未来趋势的最终战略研判与结语")
+    report_title: str = Field(description="Overall title of the strategic report.")
+    executive_summary: str = Field(description="High-level overview (no strict provenance tracking needed here).")
+    sections: List[ReportSection] = Field(description="The main body of the report, strictly organized by evolutionary phases or core topics.")
+    conclusion: str = Field(description="Forward-looking predictive conclusion.")
 
 class EvolutionPhase(BaseModel):
     phase_id: int = Field(description="阶段序号，如 1, 2, 3")

@@ -12,53 +12,37 @@ defineProps({
 
 const store = useChatStore()
 
-// 【核心魔术】：计算这句 Claim 是否应该变暗 (Dimmed)
+// 计算这句 Claim 是否应该变暗 (Dimmed)
 const isClaimDimmed = (claim) => {
-  const timeRange = store.brushState.timeRange
-  const activeLabels = store.brushState.spatialLabels || []
+  const timeRange = store.brushState?.timeRange
+  const activeLabels = store.brushState?.spatialLabels || []
 
-  // 如果当前没有任何刷选状态，所有文本保持明亮
+  // 如果没有任何刷选，全部点亮
   if (!timeRange && activeLabels.length === 0) return false
 
-  // 如果这句话没有证据支撑，在严格模式下我们让它变暗，以凸显有证据的文本
+  // AI 主观洞察 (没有源新闻)，在刷选时默认不让它变暗，因为它属于总结性全局观点
+  if (claim.is_subjective_insight) return false;
+
+  // 如果客观事实没有来源，直接变暗
   if (!claim.source_ids || claim.source_ids.length === 0) return true
 
-  const pool = store.analysisResults?.evidence_pool || {}
+  const pool = store.analysisResults?.evidence_pool || []
   const [brushStart, brushEnd] = timeRange || [0, Infinity]
-  // console.log(pool[0])
-  // console.log("timeRange" + timeRange)
-  // 检查支撑这句话的所有底层新闻，看看有没有任何一篇命中了当前的时空沙盒
+
   const hasMatch = claim.source_ids.some(docId => {
-
-    // 1. 防御性检查：跳过空的DOC_ID
     if (!docId) return false;
-
-    // 2. 根据DOC_ID从pool数组中查找对应的新闻文档
-    // 使用可选链?.防止pool中的元素为null/undefined时报错
     const doc = pool.find(item => item?.DOC_ID === docId);
-    // const doc = pool[id]
     if (!doc) return false
 
-    // 1. 时间校验
     let timeMatch = true
     if (doc.publish_date) {
       const docTime = new Date(doc.publish_date).getTime()
       timeMatch = docTime >= brushStart && docTime <= brushEnd
     }
 
-    // 2. 空间与语义标签校验
-    let labelMatch = true
-    // if (activeLabels.length > 0) {
-    //   // 将新闻的各个字段拼接成大字符串进行模糊匹配
-    //   const textToSearch = `${doc.title} ${doc.content} ${doc.country || ''} ${(doc.locations || []).join(' ')}`.toLowerCase()
-    //   // 只要有一条标签命中即可
-    //   labelMatch = activeLabels.some(label => textToSearch.includes(label.toLowerCase()))
-    // }
-
-    return timeMatch && labelMatch
+    return timeMatch
   })
 
-  // 如果没有底层新闻匹配，这句话就退居背景
   return !hasMatch
 }
 </script>
@@ -70,72 +54,92 @@ const isClaimDimmed = (claim) => {
       :key="idx"
       class="claim-sentence"
       :class="{
-        'direct-quote': claim.is_direct_quote,
-        'is-dimmed': isClaimDimmed(claim) /* 动态绑定变暗样式 */
+        'is-insight': claim.is_subjective_insight,
+        'is-dimmed': isClaimDimmed(claim)
       }"
     >
-      {{ claim.statement }}
+      <span class="claim-text">{{ claim.content || claim.statement }}</span>
 
       <sup
-        v-if="claim.source_ids && claim.source_ids.length > 0"
+        v-if="!claim.is_subjective_insight && claim.source_ids && claim.source_ids.length > 0"
         class="citation-badge"
-        @click.stop="store.openEvidence(claim.source_ids)"
-        title="Click to view original evidence"
+        @click.stop="store.openEvidence(
+          claim.source_ids,
+          claim.claim_id || claim.content || claim.statement,
+          claim.content || claim.statement
+        )"
+        title="点击查看原始证据"
       >
         [{{ claim.source_ids.length }} source]
       </sup>
+
+      <sup
+        v-if="claim.is_subjective_insight"
+        class="insight-badge"
+        title="AI 战略推演与洞察"
+      >
+        💡 AI Insight
+      </sup>
+
+      <span class="sentence-spacer"> </span>
     </span>
   </div>
 </template>
 
 <style scoped>
 .traceable-paragraph {
-  font-size: 12px;
-  line-height: 1.8;
+  font-size: 14.5px;
+  line-height: 1.85; /* 增加行高，提升大段文字的阅读舒适度 */
   color: #333;
-  text-align: justify;
+  text-align: justify; /* 两端对齐，报告显得更严谨 */
+  margin-bottom: 12px;
 }
 
-/* 句子原样式与过渡动画 */
+/* 恢复为行内元素 */
 .claim-sentence {
   display: inline;
-  font-size: 14px;
-  transition: opacity 0.4s ease, color 0.4s ease, background-color 0.4s ease;
+  transition: opacity 0.4s ease, color 0.4s ease;
 }
 
-/* 如果是直接截取原话，给一点极其微妙的背景色提示 */
-.claim-sentence.direct-quote {
-  background-color: rgba(64, 158, 255, 0.08);
-  border-radius: 2px;
-}
-
-/* 【核心样式】：褪色退居背景的样式 */
+/* 褪色退居背景的样式 (刷选时生效) */
 .claim-sentence.is-dimmed {
   opacity: 0.25;
   color: #909399;
 }
 
-/* 当句子变暗时，引用角标也顺带变暗隐藏，降低视觉干扰 */
-.claim-sentence.is-dimmed .citation-badge {
+.claim-sentence.is-dimmed .citation-badge,
+.claim-sentence.is-dimmed .insight-badge {
   background-color: transparent;
   border-color: transparent;
   color: #c0c4cc;
   opacity: 0.5;
 }
 
-/* 角标原样式 */
-.citation-badge {
-  color: #409EFF;
+/* AI 洞察的文本可以稍微带一点颜色区分，但不破坏段落连贯性 */
+.claim-sentence.is-insight .claim-text {
+  color: #2a5caa;
+  /* font-style: italic; 如果你喜欢斜体可以解开注释 */
+}
+
+/* ================= 句末角标样式 (Superscript) ================= */
+
+.citation-badge, .insight-badge {
   cursor: pointer;
   font-size: 0.75rem;
   font-weight: 600;
-  margin: 0 4px;
-  padding: 2px 4px;
-  background-color: #ecf5ff;
+  margin: 0 2px 0 4px; /* 紧贴句子末尾 */
+  padding: 1px 4px;
   border-radius: 4px;
-  border: 1px solid #b3d8ff;
   user-select: none;
   transition: all 0.2s ease;
+  vertical-align: super; /* 确保它像论文引用一样飘在右上角 */
+}
+
+/* 客观证据角标 */
+.citation-badge {
+  color: #409EFF;
+  background-color: #ecf5ff;
+  border: 1px solid #b3d8ff;
 }
 
 .citation-badge:hover {
@@ -143,5 +147,18 @@ const isClaimDimmed = (claim) => {
   color: #ffffff;
   transform: translateY(-2px);
   box-shadow: 0 2px 4px rgba(64, 158, 255, 0.3);
+}
+
+/* AI 洞察角标 */
+.insight-badge {
+  color: #e6a23c;
+  background-color: #fdf6ec;
+  border: 1px solid #f3d19e;
+  cursor: default; /* 这个不需要点击 */
+}
+
+.sentence-spacer {
+  display: inline-block;
+  width: 4px;
 }
 </style>

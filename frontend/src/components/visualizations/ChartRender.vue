@@ -5,6 +5,22 @@ import VegaLiteChart from './VegaLiteChart.vue'
 
 defineProps({ task: Object ,
 hideMap: Object})
+
+import { ref, nextTick } from 'vue'
+
+// 记录当前关系图是否全屏
+const isFullscreen = ref(false)
+
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+
+  // 🌟 核心细节：DOM 更新后，强制触发一次窗口 resize 事件
+  // 这样 EchartsCanvas 内部监听 resize 的机制就会生效，自动将画布撑满全屏
+  nextTick(() => {
+    window.dispatchEvent(new Event('resize'))
+  })
+}
+
 </script>
 
 <template>
@@ -44,11 +60,23 @@ hideMap: Object})
   </template>
 
   <template v-if="task.agent_name === 'Relation_Miner_Agent'">
-    <div class="chart-box">
-      <div class="chart-header">Interaction Network Graph</div>
+    <div class="chart-box" :class="{ 'is-fullscreen': isFullscreen }">
+
+      <div class="chart-header">
+        <span>Interaction Network Graph</span>
+        <button
+          class="fullscreen-btn"
+          @click="toggleFullscreen"
+          :title="isFullscreen ? 'Exit Fullscreen' : 'Expand to Fullscreen'"
+        >
+          {{ isFullscreen ? '⛌' : '⛶' }}
+        </button>
+      </div>
+
       <div class="chart-content">
         <EchartsCanvas chartType="relation_graph" :chartData="task.visualization_data.graph_chart" />
       </div>
+
     </div>
   </template>
 
@@ -80,6 +108,57 @@ hideMap: Object})
 }
 .chart-header .icon { margin-right: 8px; font-size: 1.1rem; }
 .chart-content { flex: 1; position: relative; width: 100%; }
+/* 修改 Header 布局，让标题和按钮左右两端对齐 */
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 按钮样式 */
+.fullscreen-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: #909399;
+  transition: all 0.2s;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.fullscreen-btn:hover {
+  color: #409EFF;
+  transform: scale(1.1);
+}
+
+/* 🌟 核心：全屏状态的 CSS 覆写 */
+.chart-box.is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 3000; /* 确保层级高于抽屉和其他遮罩 */
+  margin: 0;
+  border-radius: 0;
+  background-color: #f5f7fa; /* 全屏后的底色，根据你的系统主题调整 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 全屏状态下，让图表内容区撑满剩余的垂直空间 */
+.chart-box.is-fullscreen .chart-content {
+  flex: 1;
+  height: 100%;
+}
+
+.chart-box.is-fullscreen .chart-header {
+  padding: 15px 20px;
+  background-color: #fff;
+  border-bottom: 1px solid #ebeef5;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
 </style>
 
 

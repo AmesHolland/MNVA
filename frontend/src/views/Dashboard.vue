@@ -43,14 +43,25 @@ const getUniqueTasks = (sections) => {
   const seen = new Set()
   const uniqueTasks = []
 
+  // 防御性检查
+  if (!sections || !Array.isArray(sections)) return uniqueTasks
+
   sections.forEach(sec => {
-    sec.ref_task_ids?.forEach(id => {
-      if (!seen.has(id) && tasks[id]) {
-        seen.add(id)
-        uniqueTasks.push({ ...tasks[id], task_id: id })
+    // 兼容新旧字段名
+    const claims = sec.claims || sec.content_claims || []
+
+    claims.forEach(claim => {
+      // 🌟 核心修改：直接从句子的溯源属性中提取任务 ID
+      const taskId = claim.source_subtask
+
+      // 如果这个任务存在、有效、且没被添加过
+      if (taskId && !seen.has(taskId) && tasks[taskId]) {
+        seen.add(taskId)
+        uniqueTasks.push({ ...tasks[taskId], task_id: taskId })
       }
     })
   })
+
   return uniqueTasks
 }
 
@@ -189,97 +200,7 @@ const handleMouseLeave = () => {
         <!-- 场景 A：正式报告已生成 -->
         <template v-if="store.analysisResults?.report">
 
-<!--          <header class="top-toolbar">-->
-<!--            <div class="report-meta">-->
-<!--              <h1 class="report-title">{{ store.analysisResults.report.report_title }}</h1>-->
-<!--            </div>-->
-<!--  -->
-<!--            &lt;!&ndash; 【新增】：任务历史切换面板 &ndash;&gt;-->
-<!--            <div-->
-<!--        class="task-history-panel"-->
-<!--        v-if="store.taskHistory.length > 0"-->
-<!--        @mouseenter="handleMouseEnter"-->
-<!--        @mouseleave="handleMouseLeave"-->
-<!--      >-->
-<!--        <span class="history-label">History:</span>-->
-<!--  -->
-<!--        <div class="history-list">-->
-<!--          <button-->
-<!--            v-for="(task, idx) in store.taskHistory"-->
-<!--            :key="task.task_id"-->
-<!--            :class="['history-btn', { active: store.analysisResults.report.report_title === task.results.report.report_title }]"-->
-<!--            @click="handleTaskSwitch(task)"-->
-<!--          >-->
-<!--            {{ idx + 1 }}-->
-<!--            <span v-if="task.is_sandbox" class="sandbox-badge">🔍</span>-->
-<!--          </button>-->
-<!--        </div>-->
-<!--  -->
-<!--        <transition name="fade-slide">-->
-<!--          <div class="dag-hover-board" v-show="isHovering">-->
-<!--            <div class="dag-board-header">-->
-<!--              <h3>Analysis Trace</h3>-->
-<!--              <span class="sub-text">History Pipeline</span>-->
-<!--            </div>-->
-<!--  -->
-<!--            <div class="dag-timeline">-->
-<!--              <div-->
-<!--                class="dag-tree"-->
-<!--                v-for="(task, idx) in store.taskHistory"-->
-<!--                :key="task.task_id"-->
-<!--                :class="{ 'is-active': store.analysisResults.report.report_title === task.results.report.report_title }"-->
-<!--                @click="handleTaskSwitch(task)"-->
-<!--              >-->
-<!--                <div class="node goal-node">-->
-<!--                  <div class="node-header">-->
-<!--                    <span class="node-type">Goal #{{ idx + 1 }}</span>-->
-<!--                    <span v-if="task.is_sandbox" class="badge-sandbox">Sandbox</span>-->
-<!--                  </div>-->
-<!--                  <div class="node-content" :title="task.query">{{ task.query }}</div>-->
-<!--                  <div class="progress-bar red-bar"></div>-->
-<!--                </div>-->
-<!--  -->
-<!--                <div class="sub-nodes-container" v-if="task.results && task.results.tasks">-->
-<!--                  <div-->
-<!--                    class="node sub-node"-->
-<!--                    v-for="(subTask, key) in task.results.tasks"-->
-<!--                    :key="key"-->
-<!--                  >-->
-<!--                    <div class="sub-node-left">-->
-<!--                      <span class="node-type">Task {{ key }}</span>-->
-<!--                    </div>-->
-<!--                    <div class="sub-node-right">-->
-<!--                      <span class="node-content">{{ subTask.agent_name.replace('_Agent', '') }}</span>-->
-<!--                      <span class="icon-chart">📊</span>-->
-<!--                    </div>-->
-<!--                    <div class="progress-bar blue-bar"></div>-->
-<!--                  </div>-->
-<!--                </div>-->
-<!--                <div class="history-connector" v-if="idx < store.taskHistory.length - 1"></div>-->
-<!--              </div>-->
-<!--            </div>-->
-<!--          </div>-->
-<!--        </transition>-->
-<!--      </div>-->
-<!--  -->
-<!--            <div class="view-toggle">-->
-<!--              <button-->
-<!--                :class="['toggle-btn', { active: viewMode === 'split' }]"-->
-<!--                @click="viewMode = 'split'"-->
-<!--                title="Split view: Left (text) / Right (charts)"-->
-<!--              >-->
-<!--                <span class="icon">◫</span> Dashboard-->
-<!--              </button>-->
-<!--              <button-->
-<!--                :class="['toggle-btn', { active: viewMode === 'narrative' }]"-->
-<!--                @click="viewMode = 'narrative'"-->
-<!--                title="Stream view: Text & images interleaved"-->
-<!--              >-->
-<!--                <span class="icon">📄</span> Narrative-->
-<!--              </button>-->
-<!--            </div>-->
-<!--          </header>-->
-<!--  -->
+
           <div v-if="viewMode === 'split'" class="split-layout">
 
             <div class="split-text-pane">
@@ -287,10 +208,10 @@ const handleMouseLeave = () => {
   <!--              <strong>Abstract：</strong>{{ store.analysisResults.report.executive_summary }}-->
   <!--            </div>-->
             <article v-for="(section, index) in store.analysisResults.report.sections" :key="'text-'+index" class="text-section">
-              <h2 class="section-subtitle">{{ index + 1 }}. {{ section.subtitle }}</h2>
+              <h2 class="section-subtitle">{{ index + 1 }}. {{ section.section_title }}</h2>
 
               <div class="section-content">
-                 <TraceableText :claims="section.content_claims" />
+                 <TraceableText :claims="section.claims || section.content_claims" />
               </div>
             </article>
               <div class="conclusion-box">
@@ -305,7 +226,6 @@ const handleMouseLeave = () => {
 <!--              </template>-->
 <!--            </div>-->
             <div class="split-chart-pane">
-
 
                 <div class="chart-box" style="grid-column: 1 / -1; " v-if="unifiedMapData">
                   <div class="chart-header"> Spatiotemporal Unified Map</div>

@@ -3,15 +3,10 @@ from typing import List, Literal
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
-import pandas as pd
-from collections import defaultdict
 
 from agent.agents.schemas import Claim
-from agent.config.llm_config import llm_qw_quick
+from agent.config.llm_config import llm_qw_thinking
 from agent.config.prompt_template import RELATION_MINER_PROMPT
-
-from pydantic import BaseModel, Field
-from typing import List, Literal
 
 
 class RelationEdge(BaseModel):
@@ -24,18 +19,21 @@ class RelationEdge(BaseModel):
         description="Short phrase describing the interaction (e.g., 'fired water cannon', 'signed treaty').")
     interaction_date: str = Field(description="YYYY-MM-DD when this interaction occurred.")
     is_causal: bool = Field(description="True if the text explicitly states source CAUSED target to react.")
-
-    # 【核心新增】：证据追踪字段
     source_ids: List[str] = Field(
         description="List of exact DOC_IDs from the input text that describe this relationship. Like ['001']")
 
+# === 🌟 核心新增：网络层面的战略洞察 ===
+class NetworkStrategicInsights(BaseModel):
+    power_dynamics: str = Field(description="Analysis of who holds the leverage or central hub position in this network, and who is marginalized.")
+    alliance_vs_friction: str = Field(description="Deep dive into the underlying alliances forming or hidden frictions brewing beneath the surface interactions.")
+    network_evolution_forecast: str = Field(description="Prediction of how these relationships will shift (e.g., 'Bilateral tensions likely to draw in third-party actors like X').")
 
+# === 修改：双轨制输出 ===
 class RelationExtractionOutput(BaseModel):
-    # summary: str = Field(description="Summary of the inter-entity dynamics.")
-    overview_claims: List[Claim] = Field(description="Summary of the inter-entity dynamics broken down into traceable claims.")
+    factual_grounding: List[Claim] = Field(description="Objective summary of the inter-entity dynamics broken down into traceable claims. MUST be traced to source_ids.")
+    strategic_insights: NetworkStrategicInsights = Field(description="Deep, subjective analysis of the network's power dynamics and future shifts. No source_ids required.")
     relations: List[RelationEdge] = Field(description="List of extracted relationships.")
-
-llm = llm_qw_quick
+llm = llm_qw_thinking
 parser = JsonOutputParser(pydantic_object=RelationExtractionOutput)
 
 prompt = PromptTemplate(
@@ -142,8 +140,9 @@ def relation_miner_agent(entities, news_list, blueprint_context="", output_langu
     ]
 
     return {
-        # 注意：这里假设 raw_result 里已经按我们上一次的约定，把 summary 改为了 overview_claims
-        "final_answer": raw_result.get('overview_claims', []),
+        # 🌟 双轨输出：事实与洞察同时传递
+        "factual_grounding": raw_result.get('factual_grounding', []),
+        "strategic_insights": raw_result.get('strategic_insights', {}),
         "visualization_data": {
             "type": "relation_network",
             "graph_chart": {
@@ -151,6 +150,5 @@ def relation_miner_agent(entities, news_list, blueprint_context="", output_langu
                 "links": graph_links
             },
             "sankey_chart": causal_links
-        },
-        "structured_insight": raw_result
+        }
     }

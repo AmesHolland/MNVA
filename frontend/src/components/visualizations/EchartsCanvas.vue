@@ -388,36 +388,91 @@ const renderChart = async () => {
   // 3.1 Relation Miner: Force Graph
   // ==========================================
   else if (props.chartType === 'relation_graph') {
-    const { nodes, links } = props.chartData
-    const relationColorMap = { 'Conflict': '#F56C6C', 'Cooperation': '#67C23A', 'Diplomacy': '#E6A23C', 'Trade': '#409EFF', 'Other': '#909399' }
-    const graphNodes = nodes.map(n => ({ name: n.id, symbolSize: 40, itemStyle: { color: '#2a5caa', borderColor: '#fff', borderWidth: 2 }, label: { show: true, position: 'bottom', color: '#303133', fontWeight: 'bold' } }))
+  const { nodes, links } = props.chartData
+  const relationColorMap = { 'Conflict': '#F56C6C', 'Cooperation': '#67C23A', 'Diplomacy': '#E6A23C', 'Trade': '#409EFF', 'Other': '#909399' }
 
-    // 【修改】：缓存带有 active_dates 的连线数据
-    originalSeriesData = links.map(l => ({
-      source: l.source, target: l.target, value: l.value,
-      source_ids: l.source_ids || [],
-      active_dates: l.active_dates || [], // 刷选依赖此字段
-      label: { show: true, formatter: l.label, fontSize: 10, color: '#666' },
-      lineStyle: { color: relationColorMap[l.type] || '#909399', width: Math.min(Math.max(l.value, 1), 5), curveness: 0.2, opacity: 1 },
-      tooltip: l.tooltip
-    }))
+  const graphNodes = nodes.map(n => ({
+    name: n.id,
+    symbolSize: 40,
+    itemStyle: { color: '#2a5caa', borderColor: '#fff', borderWidth: 2, shadowBlur: 10, shadowColor: 'rgba(42, 92, 170, 0.3)' }, // 加一点微弱的高级阴影
+    label: { show: true, position: 'bottom', color: '#303133', fontWeight: 'bold' }
+  }))
 
-    option = {
-      tooltip: {
-        formatter: (p) => {
-          if (p.dataType === 'edge') {
-            let tip = `<div style="max-width:250px; white-space:pre-wrap;"><b>${p.data.source} ➔ ${p.data.target}</b><br/><br/>${p.data.tooltip.replace(/\n/g, '<br/>')}</div>`
-            if (p.data.source_ids && p.data.source_ids.length > 0) {
-              tip += `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #ebeef5; color:#409EFF; font-size:12px; font-weight:bold;">👆 Click the connection line to view ${p.data.source_ids.length} pieces of original intelligence</div>`
-            }
-            return tip
+  // 【修改 1】：为连线文字加上白色的“胶囊背景”，防止与线条或其他文字重叠
+  originalSeriesData = links.map(l => ({
+    source: l.source,
+    target: l.target,
+    value: l.value,
+    source_ids: l.source_ids || [],
+    active_dates: l.active_dates || [],
+    label: {
+      show: true,
+      formatter: l.label,
+      fontSize: 11,
+      color: '#555',
+      backgroundColor: 'rgba(255, 255, 255, 0.85)', // 🌟 核心：半透明白色背景
+      padding: [3, 6],                              // 🌟 核心：给文字一点呼吸空间
+      borderRadius: 4,                              // 🌟 核心：圆角变成小胶囊
+      borderWidth: 1,
+      borderColor: relationColorMap[l.type] || '#ebeef5' // 边框颜色和连线颜色一致
+    },
+    lineStyle: {
+      color: relationColorMap[l.type] || '#909399',
+      width: Math.min(Math.max(l.value, 1), 5),
+      curveness: 0.2,
+      opacity: 0.7
+    },
+    tooltip: l.tooltip // 保存原始长文本
+  }))
+
+  option = {
+    // 【修改 2】：彻底重构 Tooltip，限制最大宽度，并允许内部滚动
+    tooltip: {
+      enterable: true, // 🌟 核心：允许鼠标进入 tooltip 内部（这样才能滚动！）
+      confine: true,   // 🌟 核心：防止 tooltip 超出 ECharts 容器边缘
+      extraCssText: 'max-width: 320px; white-space: normal; word-break: break-word; box-shadow: 0 4px 16px rgba(0,0,0,0.1); border-radius: 8px; padding: 12px;',
+      formatter: (p) => {
+        if (p.dataType === 'edge') {
+          let tip = `
+            <div style="font-size: 14px; font-weight: bold; color: #303133; border-bottom: 1px solid #ebeef5; padding-bottom: 8px; margin-bottom: 8px;">
+              🔗 ${p.data.source} ➔ ${p.data.target}
+            </div>
+            <div style="font-size: 13px; color: #606266; line-height: 1.6; max-height: 180px; overflow-y: auto; padding-right: 4px;">
+              ${p.data.tooltip.replace(/\n/g, '<br/>')}
+            </div>
+          `;
+          if (p.data.source_ids && p.data.source_ids.length > 0) {
+            tip += `
+              <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ebeef5; color: #409EFF; font-size: 12px; font-weight: bold; display: flex; align-items: center;">
+                👆 Click the edge to view ${p.data.source_ids.length} pieces of evidence
+              </div>
+            `;
           }
-          return p.name
+          return tip;
         }
-      },
-      series: [{ type: 'graph', layout: 'force', data: graphNodes, links: originalSeriesData, roam: true, edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [4, 10], force: { repulsion: 800, edgeLength: [100, 200], gravity: 0.1 } }]
-    }
+        // 节点的简易提示
+        return `<div style="font-weight:bold;">📍 ${p.name}</div>`;
+      }
+    },
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      data: graphNodes,
+      links: originalSeriesData,
+      roam: true, // 允许整个画布缩放和平移
+
+      // 🌟 核心新增：允许单个节点被拖拽！
+      draggable: true,
+      edgeSymbol: ['none', 'arrow'],
+      edgeSymbolSize: [4, 10],
+      force: {
+        repulsion: 1200, // 🌟 修改：把排斥力从 800 调大到 1200，让节点之间离得更远，给文字留出空间
+        edgeLength: [150, 250], // 🌟 修改：把最小连线长度拉长
+        gravity: 0.1
+      }
+    }]
   }
+}
   // ==========================================
   // 3.2 Relation Miner: Sankey
   // ==========================================

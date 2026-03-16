@@ -14,16 +14,19 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 
 from agent.agents.sub_agent.agent_wrappers import AGENT_MAPPING
-from agent.config.llm_config import llm_qw_quick
+from agent.config.llm_config import llm_qw_quick, llm_qw_thinking, llm_claude_quick, llm_claude_thinking
 from agent.config.prompt_template import get_intent_prompt, get_data_profiling_prompt, INTEGRATING_PROMPT, \
     ANCHOR_PROMPT, PLANNING_PROMPT, get_profile_merge_prompt
 from agent.tools.base import safe_parse_json
 # 从上面定义的模块导入依赖
 from ..schemas import ResearchState, FinalReport, SpatiotemporalBlueprint, ExecutionPlan
 from ...rag.mysql_store import MySQLDB
-from ...tools.news_manager import get_news_by_id
+from ...tools.news_manager import retrieve_news
 
-model = llm_qw_quick
+# model_quick = llm_claude_quick
+# model_thinking = llm_claude_thinking
+model_quick = llm_qw_quick
+model_thinking = llm_qw_thinking
 
 
 
@@ -47,7 +50,7 @@ def intent_node(state: ResearchState) -> dict:
     intent_prompt = get_intent_prompt(topic, today, output_language)
 
     try:
-        response = model.invoke([HumanMessage(content=intent_prompt)])
+        response = model_quick.invoke([HumanMessage(content=intent_prompt)])
         parsed_intent = safe_parse_json(response.content)
         intent = normalize_intent(parsed_intent, topic)
     except Exception as e:
@@ -141,7 +144,7 @@ def simple_chat_node(state: ResearchState) -> dict:
     
     prompt = f"你是一个海洋态势感知系统的智能助手。请根据以下对话历史，简明扼要地回答用户的最新问题。\n\n对话历史:\n{''.join(prompt_messages)}\n\n最新问题: {topic}"
     
-    response = model.invoke([HumanMessage(content=prompt)])
+    response = model_quick.invoke([HumanMessage(content=prompt)])
 
     return {
         "current_phase": "ready",
@@ -152,7 +155,7 @@ def simple_chat_node(state: ResearchState) -> dict:
 # =========================================================
 # 1) 通用小工具
 # =========================================================
-
+# 对输入的关键词列表进行规范化清洗和去重处理，同时限制最终返回的关键词数量，确保输出是一个干净、无重复、长度可控的字符串列表
 def _normalize_keywords(words: List[Any], limit: int = 8) -> List[str]:
     if not words:
         return []
@@ -170,7 +173,6 @@ def _normalize_keywords(words: List[Any], limit: int = 8) -> List[str]:
         if len(result) >= limit:
             break
     return result
-
 
 def _normalize_group_list(groups: List[Any], group_limit: int = 6, item_limit: int = 6) -> List[List[str]]:
     """
@@ -493,7 +495,7 @@ def rewrite_retrieval_plan_with_llm(query: str, intent: dict) -> dict:
     prompt = get_retrieval_rewrite_prompt(query, intent, today)
 
     try:
-        response = model.invoke([HumanMessage(content=prompt)])
+        response = model_quick.invoke([HumanMessage(content=prompt)])
         raw = safe_parse_json(response.content)
         rewritten = normalize_rewritten_plan(raw, coarse_plan)
         return rewritten
@@ -542,7 +544,13 @@ def data_retrieval_node(state: dict):
     # ---------------------------
     if intent.get("is_sandbox_request"):
         constraints = intent.get("sandbox_constraints", {})
-        news_list = fetch_news_by_sandbox_constraints(dataset_id, constraints)
+        start_time = constraints.get("start_time", "")
+        end_time = constraints.get("end_time", "")
+        spatial_labels = _normalize_keywords(constraints.get("spatial_labels", []), limit=8)
+
+        # news_list = fetch_news_by_sandbox_constraints(dataset_id, constraints)
+        news_list = retrieve_news(start_time, end_time)
+
 
         retrieval_meta = {
             "mode": "sandbox_hard_filter",
@@ -562,19 +570,17 @@ def data_retrieval_node(state: dict):
     # ---------------------------
     coarse_plan = intent.get("retrieval_plan", {})
     rewritten_plan = rewrite_retrieval_plan_with_llm(query, intent)
-    print("rewritten_plan: ", rewritten_plan)
     use_full_dataset = rewritten_plan.get("use_full_dataset", True)
     date_from = rewritten_plan.get("date_from", "")
     date_to = rewritten_plan.get("date_to", "")
-    print("Yes or no")
     if use_full_dataset:
-        print("use_full_dataset")
-        news_list = fetch_all_news_by_dataset_id(
-            dataset_id=dataset_id,
-            date_from=date_from,
-            date_to=date_to,
-        )
-        news_list = get_news_by_id([])
+
+        # news_list = fetch_all_news_by_dataset_id(
+        #     dataset_id=dataset_id,
+        #     date_from=date_from,
+        #     date_to=date_to,
+        # )
+        news_list = retrieve_news(date_from, date_to)
         retrieval_meta = {
             "mode": "full_dataset",
             "dataset_id": dataset_id,
@@ -585,35 +591,16 @@ def data_retrieval_node(state: dict):
         }
     else:
         # news_list = fetch_news_by_compiled_rewrite(dataset_id, rewritten_plan)
-        news_list = get_news_by_id([])
+        news_list = retrieve_news(date_from, date_to)
         print("Not use_full_dataset")
-        # 小样本回退
-        if len(news_list) < 10:
-            fallback_news = fetch_all_news_by_dataset_id(
-                dataset_id=dataset_id,
-                date_from=date_from,
-                date_to=date_to,
-            )
-
-            retrieval_meta = {
-                "mode": "keyword_date_with_llm_rewrite",
-                "dataset_id": dataset_id,
-                "coarse_plan": coarse_plan,
-                "rewritten_plan": rewritten_plan,
-                "retrieved_count": len(news_list),
-                "fallback_to_full_dataset": True,
-                "fallback_count": len(fallback_news),
-            }
-            news_list = fallback_news
-        else:
-            retrieval_meta = {
-                "mode": "keyword_date_with_llm_rewrite",
-                "dataset_id": dataset_id,
-                "coarse_plan": coarse_plan,
-                "rewritten_plan": rewritten_plan,
-                "retrieved_count": len(news_list),
-                "fallback_to_full_dataset": False,
-            }
+        retrieval_meta = {
+            "mode": "keyword_date_with_llm_rewrite",
+            "dataset_id": dataset_id,
+            "coarse_plan": coarse_plan,
+            "rewritten_plan": rewritten_plan,
+            "retrieved_count": len(news_list),
+            "fallback_to_full_dataset": False,
+        }
 
     print(f"   ✅ 数据检索完成，最终用于分析的新闻数: {len(news_list)}")
 
@@ -623,8 +610,8 @@ def data_retrieval_node(state: dict):
     }
 
 
-profiler_model = model   # 建议用快模型；没有就改成 model
-BATCH_SIZE = 20
+profiler_model = model_quick   # 建议用快模型；没有就改成 model
+BATCH_SIZE = 10
 MAX_WORKERS = 4
 
 
@@ -722,7 +709,7 @@ def spatiotemporal_scoping_anchor_node(state: dict) -> dict:
     )
 
     # === 3. 组装 Chain (注意将 model 替换为你实际的 llm 实例) ===
-    anchor_chain = anchor_prompt | model | anchor_parser
+    anchor_chain = anchor_prompt | model_thinking | anchor_parser
 
     intent = state.get("intent", {})
     raw_news_list = state.get("news_list", [])
@@ -744,7 +731,7 @@ def spatiotemporal_scoping_anchor_node(state: dict) -> dict:
         ent_val = news.get("country", [])
         ents = ", ".join(ent_val) if isinstance(ent_val, list) else str(ent_val)
 
-        summary = news.get("summary", "")
+        summary = news.get("overview", "")
 
         line = f"[{date}] Title: {title} | Loc: {locs} | Ent: {ents} | Sum: {summary}"
         skeleton_lines.append(line)
@@ -827,11 +814,6 @@ def normalize_plan(plan: dict, blueprint: dict, profile_data: dict) -> dict:
                 continue
 
         if agent == "Relation_Miner_Agent":
-            print("===================")
-            print(args)
-            print(args.get("focus_entities"))
-            print(args["focus_entities"])
-            print("===================")
             focus_entities = args.get("focus_entities", [])
             if not isinstance(focus_entities, list):
                 focus_entities = []
@@ -960,7 +942,7 @@ def planning_node(state: dict) -> dict:
         print("   🧠 正在解析时空蓝图，生成动态数据路由计划...")
 
         try:
-            planning_chain = planning_prompt | model | plan_parser
+            planning_chain = planning_prompt | model_thinking | plan_parser
 
             raw_plan = planning_chain.invoke({
                 "user_query": user_query,
@@ -1344,7 +1326,7 @@ def integrating_node(state: ResearchState) -> dict:
     )
 
     # 组装 Chain (注意：这里的 model 替换为你实际使用的 llm 实例，比如 llm_qw_quick)
-    integrating_chain = integrating_prompt | model | integrating_parser
+    integrating_chain = integrating_prompt | model_thinking | integrating_parser
 
     intent = state.get("intent", {})
     raw_results = state.get("task_results", {})
@@ -1353,22 +1335,43 @@ def integrating_node(state: ResearchState) -> dict:
     profile_data = state.get("analysis_results", {}).get("data_profile", {})
     output_language = state.get("output_language")
     # 1. 组装上下文区块
+    # 1. 组装上下文区块 (携带任务和阶段元数据)
     context_blocks = []
+
+    # 假设你在前面的规划节点 (planning_node) 中，已经把每个 task 所属的 phase 记下来了
+    # 这里我们遍历任务结果，把它们包装成带有元数据的块
     for task_id, res in raw_results.items():
         agent_name = res.get("agent_name", "Unknown-Agent")
-        summary_claims = res.get("summary", [])
-        block = f"### Task ID: {task_id} (Agent: {agent_name})\n"
-        if isinstance(summary_claims, list):
-            for i, claim in enumerate(summary_claims):
-                statement = claim.get("statement") if isinstance(claim, dict) else getattr(claim, "statement",
-                                                                                           str(claim))
+
+        # 🌟 关键：提取该任务所属的阶段。这通常存在于你的 plan 或 task 定义中
+        # 假设前端或 planning_node 传来的数据里有 target_phase_name
+        target_phase = res.get("target_phase_name", "Global/Cross-Phase")
+
+
+        factual_claims = res.get("factual_grounding", [])
+        insights = res.get("strategic_insights", {})
+
+        # 给大模型的提示块加上醒目的 Metadata 头部
+        block = f"### [METADATA] Task ID: {task_id} | Agent: {agent_name} | Target Phase: {target_phase}\n"
+
+        block += "【Objective Facts (Factual Grounding)】:\n"
+        if isinstance(factual_claims, list) and factual_claims:
+            for i, claim in enumerate(factual_claims):
+                statement = claim.get("statement", str(claim)) if isinstance(claim, dict) else getattr(claim,
+                                                                                                       "statement",
+                                                                                                       str(claim))
                 src_ids = claim.get("source_ids", []) if isinstance(claim, dict) else getattr(claim, "source_ids", [])
-                block += f"- 论点 {i + 1}: {statement} [证据源: {', '.join(src_ids)}]\n"
-        else:
-            block += f"- 分析结论: {summary_claims}\n"
+                block += f"  - Fact {i + 1}: {statement} [Source IDs: {', '.join(src_ids)}]\n"
+
+        block += "\n【Subjective Analysis (Strategic Insights)】:\n"
+        if isinstance(insights, dict) and insights:
+            for key, value in insights.items():
+                formatted_key = key.replace('_', ' ').title()
+                block += f"  - {formatted_key}: {value}\n"
+
         context_blocks.append(block)
 
-    formatted_context = "\n\n".join(context_blocks)
+    formatted_context = "\n\n====================\n\n".join(context_blocks)
 
     print("   🧠 正在调用 LLM 进行带有证据链的汇总写作 (JsonOutputParser)...")
 

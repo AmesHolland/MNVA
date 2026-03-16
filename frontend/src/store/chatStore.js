@@ -17,9 +17,60 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref([])
 
   const isGenerating = ref(false)
-  
-  // 移除旧的 hitlState，改为消息驱动
-  // const hitlState = ref(...) 
+
+  // ==========================================
+  // 🛡️ 证据竞争性标注 (Evidence Contestation) 模块
+  // ==========================================
+
+  // 1. 核心状态：反驳账本
+  // 结构: [{ claim_id: '...', source_id: '...', annotation: 'irrelevant'|'contradicts', reason: '...' }]
+  const evidenceAnnotations = ref([])
+
+  // 2. Action: 切换或更新标注状态
+  // 交互逻辑：如果用户点同一种按钮，就是取消标注；如果点另一种按钮，就是覆盖标注。
+  const toggleEvidenceAnnotation = (claimId, sourceId, annotationType, reason = '') => {
+    // 查找是否已经存在对这个 (结论, 证据) 对的标注
+    const existingIndex = evidenceAnnotations.value.findIndex(
+      (ann) => ann.claim_id === claimId && ann.source_id === sourceId
+    )
+
+    if (existingIndex > -1) {
+      const existingAnn = evidenceAnnotations.value[existingIndex]
+      if (existingAnn.annotation === annotationType) {
+        // 情景 A：用户再次点击了相同的状态（例如原本是 irrelevant，又点了一下），视为“撤销打标/恢复默认的 support 状态”
+        evidenceAnnotations.value.splice(existingIndex, 1)
+      } else {
+        // 情景 B：用户切换了态度（例如从 irrelevant 改成了 contradicts），直接覆盖更新
+        evidenceAnnotations.value[existingIndex] = {
+          claim_id: claimId,
+          source_id: sourceId,
+          annotation: annotationType,
+          reason: reason
+        }
+      }
+    } else {
+      // 情景 C：这是一次全新的标注，直接推入账本
+      evidenceAnnotations.value.push({
+        claim_id: claimId,
+        source_id: sourceId,
+        annotation: annotationType,
+        reason: reason
+      })
+    }
+  }
+
+  // 3. Action: 快速清理特定结论下的所有标注 (可选，用于重置)
+  const clearAnnotationsForClaim = (claimId) => {
+    evidenceAnnotations.value = evidenceAnnotations.value.filter(ann => ann.claim_id !== claimId)
+  }
+
+  // 4. Getter: 获取特定 (结论, 证据) 的当前打标状态，供 UI 高亮按钮使用
+  const getAnnotationStatus = (claimId, sourceId) => {
+    const ann = evidenceAnnotations.value.find(
+      (a) => a.claim_id === claimId && a.source_id === sourceId
+    )
+    return ann ? ann.annotation : 'support' // 默认状态是 'support' (支持/无异议)
+  }
 
   const analysisResults = ref({
     insight: { title: "Waiting for data...", summary: "Please initiate a query...", keywords: [] },
@@ -32,7 +83,13 @@ export const useChatStore = defineStore('chat', () => {
   const taskHistory = ref([])
 
   // 溯源抽屉状态
-  const evidenceState = ref({ isOpen: false, activeSourceIds: [] })
+  // 溯源抽屉状态 (扩展了结论上下文)
+  const evidenceState = ref({
+    isOpen: false,
+    activeSourceIds: [],
+    activeClaimId: null,   // 🌟 新增：唤醒抽屉的结论唯一标识
+    activeClaimText: ''    // 🌟 新增：唤醒抽屉的结论文本
+  })
 
   // 刷选状态
   const brushState = ref({ timeRange: null, spatialLabels: [] })
@@ -51,6 +108,7 @@ export const useChatStore = defineStore('chat', () => {
         if (parsed.taskHistory) taskHistory.value = parsed.taskHistory
         // 恢复 sessionId 确保后端能接上上下文
         if (parsed.sessionId) sessionId.value = parsed.sessionId
+        // console.log(analysisResults.value)
       } catch (e) {
         console.error('Failed to load state', e)
       }
@@ -78,15 +136,23 @@ export const useChatStore = defineStore('chat', () => {
 
   // === 3. Actions ===
 
-  const openEvidence = (sourceIds) => {
+  const openEvidence = (sourceIds, claimId = null, claimText = '') => {
     if (!sourceIds || sourceIds.length === 0) return
+
     evidenceState.value.activeSourceIds = sourceIds
+    evidenceState.value.activeClaimId = claimId      // 绑定上下文
+    evidenceState.value.activeClaimText = claimText  // 绑定上下文
     evidenceState.value.isOpen = true
   }
 
   const closeEvidence = () => {
     evidenceState.value.isOpen = false
-    setTimeout(() => { evidenceState.value.activeSourceIds = [] }, 300)
+    // 延迟清空数据，保证抽屉滑出动画关闭时，里面的内容不会瞬间闪崩消失
+    setTimeout(() => {
+      evidenceState.value.activeSourceIds = []
+      evidenceState.value.activeClaimId = null
+      evidenceState.value.activeClaimText = ''
+    }, 300)
   }
 
   const updateBrushState = (timeRange, spatialLabels = null) => {
@@ -265,7 +331,7 @@ export const useChatStore = defineStore('chat', () => {
     // 3. 清空上一轮的预览数据，准备接收新的
     previewData.value = null
     // 同时重置 analysisResults，避免残留上一轮的图表
-    analysisResults.value = { report: null, tasks: {} }
+    // analysisResults.value = { report: null, tasks: {} }
     
     isGenerating.value = true
 
@@ -277,6 +343,9 @@ export const useChatStore = defineStore('chat', () => {
       }
       if (intentOverride) requestPayload.intent_override = intentOverride
 
+      if (evidenceAnnotations.value.length > 0) {
+        requestPayload.evidence_annotations = evidenceAnnotations.value
+      }
       await streamChat(requestPayload, {
         onMessage: handleSSEMessage,
         onError: (err) => {
@@ -342,6 +411,10 @@ export const useChatStore = defineStore('chat', () => {
     evidenceState, openEvidence, closeEvidence,
     brushState, updateBrushState, clearBrushState, resolveMapBrush,
     formatDate, inputText, pendingSandboxContext, prepareSandboxAnalysis,
-    taskHistory, switchTask, previewData
+    taskHistory, switchTask, previewData,
+    evidenceAnnotations,
+    toggleEvidenceAnnotation,
+    clearAnnotationsForClaim,
+    getAnnotationStatus
   }
 })
