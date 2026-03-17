@@ -18,10 +18,9 @@ from agent.config.llm_config import llm_qw_quick, llm_qw_thinking, llm_claude_qu
 from agent.config.prompt_template import get_intent_prompt, get_data_profiling_prompt, INTEGRATING_PROMPT, \
     ANCHOR_PROMPT, PLANNING_PROMPT, get_profile_merge_prompt
 from agent.tools.base import safe_parse_json
-# 从上面定义的模块导入依赖
 from ..schemas import ResearchState, FinalReport, SpatiotemporalBlueprint, ExecutionPlan
 from ...rag.mysql_store import MySQLDB
-from ...tools.news_manager import retrieve_news
+from ...tools.data_manager import retrieve_news
 
 # model_quick = llm_claude_quick
 # model_thinking = llm_claude_thinking
@@ -199,191 +198,6 @@ def _normalize_group_list(groups: List[Any], group_limit: int = 6, item_limit: i
 
     return normalized
 
-# =========================================================
-# 2) SQL 查询辅助
-# =========================================================
-
-def mysql_select(sql, param):
-    db = MySQLDB(
-        host="localhost",
-        port=3306,
-        user="root",
-        password="123456",
-        database="marine_news_db"
-    )
-
-    results = db.query(sql)
-    print("30秒后查询结果：", results)
-    for res in results:
-        print(res)
-
-def fetch_all_news_by_dataset_id(dataset_id: int, date_from: str = "", date_to: str = "") -> List[dict]:
-    print("fetch_all_news_by_dataset_id", dataset_id, date_from, date_to)
-    where_clauses = ["dataset_id = %s"]
-    params: List[Any] = [dataset_id]
-
-    if date_from:
-        where_clauses.append("publish_date >= %s")
-        params.append(date_from)
-
-    if date_to:
-        where_clauses.append("publish_date <= %s")
-        params.append(date_to)
-
-    sql = f"""
-        SELECT
-            id,
-            title,
-            content,
-            publish_date,
-            url,
-            source
-        FROM news
-        WHERE {' AND '.join(where_clauses)}
-        ORDER BY publish_date DESC, id DESC
-        LIMIT 500
-    """
-    print(sql)
-    return mysql_select(sql, tuple(params))
-
-
-def fetch_news_by_sandbox_constraints(dataset_id: int, constraints: dict) -> List[dict]:
-    start_time = constraints.get("start_time", "")
-    end_time = constraints.get("end_time", "")
-    spatial_labels = _normalize_keywords(constraints.get("spatial_labels", []), limit=8)
-
-    where_clauses = ["dataset_id = %s"]
-    params: List[Any] = [dataset_id]
-
-    if start_time:
-        where_clauses.append("publish_date >= %s")
-        params.append(start_time)
-
-    if end_time:
-        where_clauses.append("publish_date <= %s")
-        params.append(end_time)
-
-    # 先用 title/content 的 OR 匹配做硬过滤
-    if spatial_labels:
-        label_parts = []
-        for label in spatial_labels:
-            label_parts.append("(title LIKE %s OR content LIKE %s)")
-            params.append(f"%{label}%")
-            params.append(f"%{label}%")
-        where_clauses.append("(" + " OR ".join(label_parts) + ")")
-
-    sql = f"""
-        SELECT
-            id,
-            title,
-            content,
-            publish_date,
-            url,
-            source
-        FROM news
-        WHERE {' AND '.join(where_clauses)}
-        ORDER BY publish_date DESC, id DESC
-        LIMIT 300
-    """
-    return mysql_select(sql, tuple(params))
-
-
-def fetch_news_by_compiled_rewrite(dataset_id: int, rewritten_plan: dict) -> List[dict]:
-    """
-    rewritten_plan 结构示例：
-    {
-      "use_full_dataset": false,
-      "date_from": "2024-01-01",
-      "date_to": "2024-12-31",
-      "must_groups": [
-        ["United States", "USA", "U.S.", "America"],
-        ["South China Sea", "SCS"]
-      ],
-      "optional_groups": [
-        ["coast guard", "maritime law enforcement"],
-        ["navy", "military exercise"]
-      ],
-      "sort_by": "relevance"
-    }
-    """
-
-    date_from = rewritten_plan.get("date_from", "") or ""
-    date_to = rewritten_plan.get("date_to", "") or ""
-    print("Must group")
-    must_groups = _normalize_group_list(rewritten_plan.get("must_groups", []), group_limit=6, item_limit=6)
-    optional_groups = _normalize_group_list(rewritten_plan.get("optional_groups", []), group_limit=8, item_limit=6)
-    sort_by = rewritten_plan.get("sort_by", "relevance")
-
-    where_clauses = ["dataset_id = %s"]
-    where_params: List[Any] = [dataset_id]
-
-    if date_from:
-        where_clauses.append("publish_date >= %s")
-        where_params.append(date_from)
-
-    if date_to:
-        where_clauses.append("publish_date <= %s")
-        where_params.append(date_to)
-
-    # must_groups: 每个 group 内 OR，不同 group 之间 AND
-    # 例如：
-    # (title LIKE '%USA%' OR content LIKE '%USA%' OR title LIKE '%America%' ...)
-    # AND
-    # (title LIKE '%South China Sea%' OR content LIKE ...)
-    for group in must_groups:
-        sub_parts = []
-        for phrase in group:
-            sub_parts.append("(title LIKE %s OR content LIKE %s)")
-            where_params.append(f"%{phrase}%")
-            where_params.append(f"%{phrase}%")
-        where_clauses.append("(" + " OR ".join(sub_parts) + ")")
-
-    # relevance score
-    # must group 中的词也参与打分，但 optional 更体现排序差异
-    score_parts = []
-    score_params: List[Any] = []
-
-    for group in must_groups:
-        for phrase in group:
-            score_parts.append("(CASE WHEN title LIKE %s THEN 4 ELSE 0 END)")
-            score_params.append(f"%{phrase}%")
-            score_parts.append("(CASE WHEN content LIKE %s THEN 2 ELSE 0 END)")
-            score_params.append(f"%{phrase}%")
-
-    for group in optional_groups:
-        for phrase in group:
-            score_parts.append("(CASE WHEN title LIKE %s THEN 2 ELSE 0 END)")
-            score_params.append(f"%{phrase}%")
-            score_parts.append("(CASE WHEN content LIKE %s THEN 1 ELSE 0 END)")
-            score_params.append(f"%{phrase}%")
-
-    relevance_sql = "0"
-    if score_parts:
-        relevance_sql = " + ".join(score_parts)
-
-    order_sql = "publish_date DESC, id DESC"
-    if sort_by == "relevance" and score_parts:
-        order_sql = "relevance_score DESC, publish_date DESC, id DESC"
-
-    sql = f"""
-        SELECT
-            id,
-            title,
-            content,
-            publish_date,
-            url,
-            source,
-            ({relevance_sql}) AS relevance_score
-        FROM news
-        WHERE {' AND '.join(where_clauses)}
-        ORDER BY {order_sql}
-        LIMIT 300
-    """
-    print("mysql select")
-    params = tuple(score_params + where_params)
-    print(params)
-    return mysql_select(sql, params)
-
 
 # =========================================================
 # 3) LLM 检索重写
@@ -548,7 +362,6 @@ def data_retrieval_node(state: dict):
         end_time = constraints.get("end_time", "")
         spatial_labels = _normalize_keywords(constraints.get("spatial_labels", []), limit=8)
 
-        # news_list = fetch_news_by_sandbox_constraints(dataset_id, constraints)
         news_list = retrieve_news(start_time, end_time)
 
 
@@ -575,11 +388,6 @@ def data_retrieval_node(state: dict):
     date_to = rewritten_plan.get("date_to", "")
     if use_full_dataset:
 
-        # news_list = fetch_all_news_by_dataset_id(
-        #     dataset_id=dataset_id,
-        #     date_from=date_from,
-        #     date_to=date_to,
-        # )
         news_list = retrieve_news(date_from, date_to)
         retrieval_meta = {
             "mode": "full_dataset",
@@ -590,7 +398,6 @@ def data_retrieval_node(state: dict):
             "fallback_to_full_dataset": False,
         }
     else:
-        # news_list = fetch_news_by_compiled_rewrite(dataset_id, rewritten_plan)
         news_list = retrieve_news(date_from, date_to)
         print("Not use_full_dataset")
         retrieval_meta = {
@@ -723,17 +530,8 @@ def spatiotemporal_scoping_anchor_node(state: dict) -> dict:
     for news in raw_news_list:
         date = news.get("publish_date", "Unknown Date")
         title = news.get("title", "No Title")
-
-        # 兼容列表或字符串形式的 region/country
-        loc_val = news.get("region", [])
-        locs = ", ".join(loc_val) if isinstance(loc_val, list) else str(loc_val)
-
-        ent_val = news.get("country", [])
-        ents = ", ".join(ent_val) if isinstance(ent_val, list) else str(ent_val)
-
         summary = news.get("overview", "")
-
-        line = f"[{date}] Title: {title} | Loc: {locs} | Ent: {ents} | Sum: {summary}"
+        line = f"[{date}] Title: {title} | Sum: {summary}"
         skeleton_lines.append(line)
 
     metadata_skeleton_str = "\n".join(skeleton_lines)
@@ -1007,45 +805,6 @@ def _to_list(value):
     return value if isinstance(value, list) else [value]
 
 
-def _parse_datetime_safe(value):
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-
-    text = str(value).strip().replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(text)
-    except Exception:
-        pass
-
-    # 兼容常见日期格式
-    for fmt in [
-        "%Y-%m-%d",
-        "%Y/%m/%d",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y/%m/%d %H:%M:%S",
-    ]:
-        try:
-            return datetime.strptime(text, fmt)
-        except Exception:
-            continue
-    return None
-
-
-def _extract_news_datetime(news_item: dict):
-    """
-    按常见字段名提取新闻时间。
-    你如果自己的字段名固定，可以只保留一个。
-    """
-    for key in ["date", "publish_date", "published_at", "pub_date", "time"]:
-        if key in news_item:
-            dt = _parse_datetime_safe(news_item.get(key))
-            if dt is not None:
-                return dt
-    return None
-
-
 def _normalize_plan_tasks(tasks: list[dict], output_language: str = "English") -> list[dict]:
     """
     适配新 schema：
@@ -1106,8 +865,8 @@ def _slice_news_by_phase_ids(news_list: list[dict], blueprint: dict, target_phas
         if not phase:
             continue
 
-        start_dt = _parse_datetime_safe(phase.get("start_date"))
-        end_dt = _parse_datetime_safe(phase.get("end_date"))
+        start_dt = datetime.strptime(phase.get("start_date"), "%Y-%m-%d")
+        end_dt = datetime.strptime(phase.get("end_date"), "%Y-%m-%d")
         if start_dt and end_dt:
             valid_ranges.append((start_dt, end_dt))
 
@@ -1117,7 +876,7 @@ def _slice_news_by_phase_ids(news_list: list[dict], blueprint: dict, target_phas
 
     sliced = []
     for item in news_list:
-        news_dt = _extract_news_datetime(item)
+        news_dt = datetime.strptime(item["publish_date"], "%Y-%m-%d")
         if news_dt is None:
             continue
 
@@ -1205,6 +964,7 @@ def _run_single_task(task: dict, state: dict, dep_results_snapshot: dict):
 
     execution_args = _build_execution_args(task, state, dep_results_snapshot)
     result = AGENT_MAPPING[agent_name](execution_args)
+    result["target_phase_ids"] = execution_args["target_phase_ids"]
     return task_id, result
 
 
@@ -1338,6 +1098,11 @@ def integrating_node(state: ResearchState) -> dict:
     # 1. 组装上下文区块 (携带任务和阶段元数据)
     context_blocks = []
 
+    context_blocks.append(blueprint["overall_narrative"])
+    for phase in blueprint["phases"]:
+        # 可按需提取字段，或直接加入整个phase对象
+        context_blocks.append(f"阶段{phase['phase_id']}: {phase['phase_name']} | {phase['start_date']} ~ {phase['end_date']}")
+
     # 假设你在前面的规划节点 (planning_node) 中，已经把每个 task 所属的 phase 记下来了
     # 这里我们遍历任务结果，把它们包装成带有元数据的块
     for task_id, res in raw_results.items():
@@ -1345,8 +1110,7 @@ def integrating_node(state: ResearchState) -> dict:
 
         # 🌟 关键：提取该任务所属的阶段。这通常存在于你的 plan 或 task 定义中
         # 假设前端或 planning_node 传来的数据里有 target_phase_name
-        target_phase = res.get("target_phase_name", "Global/Cross-Phase")
-
+        target_phase = res.get("target_phase_ids", "Global/Cross-Phase")
 
         factual_claims = res.get("factual_grounding", [])
         insights = res.get("strategic_insights", {})
@@ -1397,9 +1161,67 @@ def integrating_node(state: ResearchState) -> dict:
             "conclusion": "分析中止"
         }
 
+    # ==========================================
+    # 🌟 核心新增：构建 BFF (Backend For Frontend) 数据结构
+    # 将 phase_summaries 与 tasks 完美缝合，供前端无脑渲染
+    # ==========================================
+    phase_data_list = []
+
+    # 获取大模型生成的各阶段骨架
+    phase_summaries = final_report.get("phase_summaries", [])
+
+    for phase in phase_summaries:
+        phase_index = phase.get("phase_index", 1)
+        # 拿到大模型认为属于这个阶段的任务 ID 列表
+        related_task_ids = phase.get("related_subtasks", [])
+        phase_name = phase.get("phase_name", "")
+
+        phase_tasks = []
+
+        # 遍历所有真实的子任务，进行双重校验匹配（防止 LLM 漏写或写错 ID）
+        for t_id, task_data in raw_results.items():
+            is_related = False
+
+            # 1. 显式映射：如果大模型明确把这个任务分配到了这个阶段
+            if any(str(mapped_id).lower() == str(t_id).lower() for mapped_id in related_task_ids):
+                is_related = True
+            else:
+                # 🌟 2. 硬核兜底 (你的思路)：用 target_phase_ids 数组来判断
+                target_phase_ids = task_data.get("target_phase_ids", [])
+
+                # 防御性编程：统统转成字符串，防止 1 和 "1" 匹配失败
+                safe_target_ids = [str(pid) for pid in target_phase_ids]
+
+                if str(phase_index) in safe_target_ids:
+                    is_related = True
+
+            if is_related:
+                # 提取前端最关心的 4 个核心字段，剥离无用冗余
+                phase_tasks.append({
+                    "task_id": t_id,
+                    "agent_name": task_data.get("agent_name"),
+                    # 🌟 提取双轨分析数据
+                    "factual_grounding": task_data.get("factual_grounding", []),
+                    "strategic_insights": task_data.get("strategic_insights", {}),
+                    # 🌟 提取可视化数据
+                    "visualization_data": task_data.get("visualization_data", {})
+                })
+
+        # 将组装好的血肉填入阶段骨架
+        phase_data_list.append({
+            "phase_index": phase.get("phase_index"),
+            "phase_name": phase_name,
+            "phase_time_range": phase.get("phase_time_range"),
+            "phase_summary": phase.get("phase_summary"),
+            "key_entities": phase.get("key_entities", []),
+            "key_events": phase.get("key_events", []),
+            "subtasks": phase_tasks  # 🌟 包含该阶段所有的详细推演和图表
+        })
+
     integrated_payload = {
         "report": final_report,
         "tasks": raw_results,
+        "phase_data_list": phase_data_list,
         "evidence_pool": evidence_pool,
         "spatiotemporal_blueprint": blueprint,
         "profile_data":profile_data

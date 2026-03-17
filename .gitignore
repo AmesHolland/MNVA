@@ -1,7 +1,8 @@
-./agent/tmp/
 .env
 .idea/
-./agent/rag/data/
 ./venv/
 ./requirements.txt
 .proxyai
+frontend/.vite
+AGENTS.md
+.gitignore

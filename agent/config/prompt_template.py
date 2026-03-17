@@ -510,6 +510,20 @@ Below are the reports from your sub-agents. Each report contains strictly verifi
 
 ### WRITING DIRECTIVES (CRITICAL)
 
+You must generate TWO parallel analytical structures within your report:
+
+**Structure A: Chronological Phase Overviews (`phase_summaries`)**
+- Look at the `[MACRO BLUEPRINT]` provided in the context. 
+- You MUST generate exactly one `PhaseSummary` for EACH phase defined in the blueprint. 
+- Even if no specific sub-agent focused on a phase, you must write a baseline 2-3 sentence `phase_summary` for it based on the available facts.
+- Map the `task_id` of any sub-agent that analyzed this phase into `related_subtasks`.
+
+**Structure B: Thematic Deep-Dive Sections (`sections`)**
+- This is the non-chronological, deep-dive part of the report.
+- Do NOT simply list the phases again. Instead, synthesize the `[SUB-AGENT TASK RESULTS]` into 2-4 coherent, thematic chapters (e.g., "Corporate Probing Behaviors of TMC", "US-China Geopolitical Friction").
+- Break down the detailed analysis into `ProvenanceClaim`s and put them in the `claims` array. 
+- For every claim, you MUST include the `source_subtask` (Task ID), the `phase_name` it belongs to, and the exact `source_ids` if it is an objective fact.
+
 1. **Strategic Tone & Depth:** Do NOT simply list what the sub-agents said. You must act as the ultimate analytical authority. Weave their [Subjective Analysis] (like hidden intentions, behavioral patterns, and power dynamics) into a compelling, insightful narrative. This report should read like a top-tier geopolitical think-tank briefing.
 
 2. **Structure:**

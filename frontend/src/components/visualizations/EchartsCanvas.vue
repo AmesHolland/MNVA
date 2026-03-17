@@ -500,7 +500,7 @@ const renderChart = async () => {
   else if (props.chartType === 'unified_map') {
   if (!echarts.getMap('world')) {
       const res = await fetch('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json')
-      echarts.registerMap('world', await res.json())
+    echarts.registerMap('world', await res.json())
   }
 
   const globalData = props.chartData.globalData || [];
@@ -573,7 +573,8 @@ const renderChart = async () => {
           }
         },
     geo: {
-      map: 'world', roam: true, zoom: 1.5,
+      map: 'world', roam: true, zoom: 1,
+      // center: [180, 0], // 中心点：[经度, 纬度]，示例为大西洋/非洲中部附近
       itemStyle: { areaColor: '#e4e7ed', borderColor: '#ffffff' }
     },
     series: [

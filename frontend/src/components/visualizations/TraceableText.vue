@@ -68,15 +68,15 @@ const isClaimDimmed = (claim) => {
           claim.claim_id || claim.content || claim.statement,
           claim.content || claim.statement
         )"
-        title="点击查看原始证据"
+        title="Click to view the original evidence"
       >
-        [{{ claim.source_ids.length }} source]
+        [{{ claim.source_ids.length }}]
       </sup>
 
       <sup
         v-if="claim.is_subjective_insight"
         class="insight-badge"
-        title="AI 战略推演与洞察"
+        title="AI Strategic Deduction and Insights"
       >
         💡 AI Insight
       </sup>

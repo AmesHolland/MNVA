@@ -1,0 +1,10 @@
+[
+    {
+        "dataset_id": "ds_55b4c3b2",
+        "dataset_name": "deep-sea-mining",
+        "original_filename": "enriched_news.json",
+        "upload_time": "2026-03-16 21:59:34",
+        "row_count": 182,
+        "file_path": "D:\\ProgramFiles\\Project\\Python\\MNVA\\agent\\tools\\data_warehouse\\ds_55b4c3b2.json"
+    }
+]

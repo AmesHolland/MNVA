@@ -27,7 +27,8 @@ class ResearchState(TypedDict):
     spatiotemporal_blueprint : dict
     # 【新增】任务历史，用于存储多次分析的结果
     task_history: List[Dict[str, Any]]
-    dataset_id: int
+    # 🌟 新增：存放当前工作台选中的数据集 ID
+    dataset_id: str
     output_language : str
 
 # === 整合节点的溯源输出模型 ===
@@ -52,11 +53,22 @@ class ReportSection(BaseModel):
     section_title: str = Field(description="Title of the section (e.g., 'Phase 2: Escalation in the South China Sea').")
     claims: List[ProvenanceClaim] = Field(description="A coherent sequence of claims that form the narrative of this section.")
 
+# === 2. 时序版：阶段概述骨架 (Route B 的精髓) ===
+class PhaseSummary(BaseModel):
+    phase_index: int = Field(description="Chronological order (1, 2, 3...).")
+    phase_name: str = Field(description="Name of the phase strictly based on the blueprint.")
+    phase_time_range: str = Field(description="Time range of this phase (e.g., '2025-01 to 2025-04').")
+    phase_summary: str = Field(description="Several sentences summarizing the overall situation in this phase. Must not be empty.")
+    related_subtasks: List[str] = Field(description="List of task_ids (e.g., ['task_2']) that are relevant to this phase.")
+    source_ids: List[str] = Field(description="DOC_IDs backing up this phase summary.")
 
 # 完整报告
 class FinalReport(BaseModel):
     report_title: str = Field(description="Overall title of the strategic report.")
     executive_summary: str = Field(description="High-level overview (no strict provenance tracking needed here).")
+    # 🌟 时序线：保证每个阶段都有态势兜底
+    phase_summaries: List[PhaseSummary] = Field(
+        description="Chronological phase-by-phase situational overviews strictly following the Blueprint.")
     sections: List[ReportSection] = Field(description="The main body of the report, strictly organized by evolutionary phases or core topics.")
     conclusion: str = Field(description="Forward-looking predictive conclusion.")
 
@@ -64,6 +76,8 @@ class EvolutionPhase(BaseModel):
     phase_id: int = Field(description="阶段序号，如 1, 2, 3")
     phase_name: str = Field(description="高度概括该阶段特征的名称，如 '单边勘探准备期' 或 '国际规则博弈期'")
     time_range: str = Field(description="该阶段的时间起止，如 '2025-10-01 to 2025-10-25'")
+    start_date: str = Field(description="该阶段的开始日期，如 '2025-10-01")
+    end_date: str = Field(description="该阶段的结束日期，如 '2025-10-01 to 2025-10-25'")
     spatial_focus: str = Field(description="该阶段的核心地理焦点，如 '华盛顿'、'CCZ海域' 或 '联合国纽约总部'")
     spatial_scale: Literal["Micro", "Regional", "Macro"] = Field(
         description="空间尺度。Micro: 特定机构/微观坐标; Regional: 特定海域/专属经济区; Macro: 跨国/全球体系"

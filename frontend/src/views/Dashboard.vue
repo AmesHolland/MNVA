@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import {computed, onMounted, ref} from 'vue'
 import { useChatStore } from '../store/chatStore'
 
 // 引入左侧组件
@@ -92,93 +92,239 @@ const handleMouseLeave = () => {
     isHovering.value = false
   }, 200)
 }
+
+// ==========================================
+// === 🌟 3. 新增：数据上传与仓库管理逻辑 ===
+// ==========================================
+const isUploadModalOpen = ref(false)
+const newDatasetName = ref('')
+const selectedFile = ref(null)
+const isUploading = ref(false)
+
+// 页面挂载时，自动拉取后端已有的数据集列表
+onMounted(() => {
+  store.fetchDatasets()
+})
+
+// 处理文件拖拽或点击选择
+const handleFileSelect = (e) => {
+  selectedFile.value = e.target.files[0]
+}
+
+// 执行核心上传逻辑
+const uploadFile = async () => {
+  if (!selectedFile.value) {
+    alert("Please select a file to upload.")
+    return
+  }
+
+  isUploading.value = true
+  const formData = new FormData()
+  formData.append('file', selectedFile.value)
+  if (newDatasetName.value) {
+    formData.append('dataset_name', newDatasetName.value)
+  }
+
+  try {
+    // ⚠️ 请确保这里的端口号(5000)与你 Flask 启动的端口一致
+    const res = await fetch('http://localhost:5000/api/upload_dataset', {
+      method: 'POST',
+      body: formData
+    })
+
+    const data = await res.json()
+
+    if (data.success) {
+      alert(`Success! Imported ${data.dataset.row_count} intelligence records.`)
+
+      // 1. 重置弹窗状态
+      isUploadModalOpen.value = false
+      newDatasetName.value = ''
+      selectedFile.value = null
+
+      // 2. 重新拉取列表，并让 Store 自动选中刚上传的这个数据集
+      await store.fetchDatasets()
+      store.setActiveDataset(data.dataset.dataset_id)
+
+    } else {
+      alert("Error: " + data.error)
+    }
+  } catch (err) {
+    alert("Upload failed: " + err.message)
+  } finally {
+    isUploading.value = false
+  }
+}
+
+// 🌟 新增：追踪当前选中的 Tab（默认为阶段 1，如果想默认看总报告可以设为 'final_report'）
+const activeTab = ref('final_report')
+
+// 🌟 新增：根据 activeTab 动态计算当前要渲染的阶段数据
+const currentPhaseData = computed(() => {
+  if (!store.analysisResults?.phase_data_list) return null
+  return store.analysisResults.phase_data_list.find(p => p.phase_index === activeTab.value)
+})
+
 </script>
 
 <template>
   <div class="app-wrapper">
 
     <header class="global-top-bar">
-      <div class="brand">
-
-        <span class="sys-name">Marine News</span>
-        <span class="sys-subname">Multi-Agent Visual Analytics</span>
+      <div class="brand-area" style="display: flex; align-items: center; gap: 40px;">
+        <div class="brand">
+          <span class="sys-name">Marine News</span>
+          <span class="sys-subname">Multi-Agent Visual Analytics</span>
+        </div>
+        <div class="dataset-manager">
+          <span class="icon">📂 Corpus:</span>
+          <select v-model="store.activeDatasetId" class="dataset-select">
+            <option disabled value="">Select Analysis Corpus...</option>
+            <option v-for="ds in store.availableDatasets" :key="ds.dataset_id" :value="ds.dataset_id">
+              {{ ds.dataset_name }} ({{ ds.row_count }} records)
+            </option>
+          </select>
+          <button class="upload-trigger-btn" @click="isUploadModalOpen = true">➕ Import</button>
+        </div>
       </div>
 
       <div class="global-actions" v-if="store.analysisResults?.report">
 
-        <div class="task-history-panel" v-if="store.taskHistory.length > 0" @mouseenter="handleMouseEnter" @mouseleave="handleMouseLeave">
-          <span class="history-label">History:</span>
-          <div class="history-list">
-            <button
-              v-for="(task, idx) in store.taskHistory"
-              :key="task.task_id"
-              :class="['history-btn', { active: store.analysisResults.report.report_title === task.results.report.report_title }]"
-              @click="handleTaskSwitch(task)"
-            >
-              {{ idx + 1 }}
-              <span v-if="task.is_sandbox" class="sandbox-badge">🔍</span>
+        <div class="phase-stepper-container">
+      <div class="phase-stepper">
+        <template v-for="(phase, index) in store.analysisResults.phase_data_list" :key="'step-'+phase.phase_index">
+          <div class="step-item" :class="{ active: activeTab === phase.phase_index }" @click="activeTab = phase.phase_index">
+            <div class="step-marker">{{ phase.phase_index }}</div>
+            <div class="step-info">
+              <template v-if="activeTab === phase.phase_index">
+                <span class="step-label">Phase {{ phase.phase_index }}</span>
+                <span class="step-title" :title="phase.phase_name">{{ phase.phase_name }}</span>
+              </template>
+              <template v-else>
+                <span class="step-title">PHASE {{ phase.phase_index }}</span>
+              </template>
+            </div>
+          </div>
+          <div class="step-connector">➔</div>
+        </template>
+
+        <div class="step-item final-step" :class="{ active: activeTab === 'final_report' }" @click="activeTab = 'final_report'">
+          <div class="step-marker">📑</div>
+          <div class="step-info">
+             <template v-if="activeTab === 'final_report'">
+                <span class="step-label">Synthesis</span>
+                <span class="step-title">Final Report</span>
+              </template>
+              <template v-else>
+                <span class="step-title">Final Report</span>
+              </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+          <div class="task-history-panel" v-if="store.taskHistory.length > 0" @mouseenter="handleMouseEnter" @mouseleave="handleMouseLeave">
+            <span class="history-label">History:</span>
+            <div class="history-list">
+              <button
+                v-for="(task, idx) in store.taskHistory"
+                :key="task.task_id"
+                :class="['history-btn', { active: store.analysisResults.report.report_title === task.results.report.report_title }]"
+                @click="handleTaskSwitch(task)"
+              >
+                {{ idx + 1 }}
+                <span v-if="task.is_sandbox" class="sandbox-badge">🔍</span>
+              </button>
+            </div>
+
+            <transition name="fade-slide">
+              <div class="dag-hover-board" v-show="isHovering">
+                <div class="dag-board-header">
+                  <h3>Analysis Trace</h3>
+                  <span class="sub-text">History Pipeline</span>
+                </div>
+
+                <div class="dag-timeline">
+                  <div
+                    class="dag-tree"
+                    v-for="(task, idx) in store.taskHistory"
+                    :key="task.task_id"
+                    :class="{ 'is-active': store.analysisResults.report.report_title === task.results.report.report_title }"
+                    @click="handleTaskSwitch(task)"
+                  >
+                    <div class="node goal-node">
+                      <div class="node-header">
+                        <span class="node-type">Goal #{{ idx + 1 }}</span>
+                        <span v-if="task.is_sandbox" class="badge-sandbox">Sandbox</span>
+                      </div>
+                      <div class="node-content" :title="task.query">{{ task.query }}</div>
+                      <div class="progress-bar red-bar"></div>
+                    </div>
+
+                    <div class="sub-nodes-container" v-if="task.results && task.results.tasks">
+                      <div
+                        class="node sub-node"
+                        v-for="([key, subTask], index) in Object.entries(task.results.tasks)"
+                        :key="key"
+                      >
+                        <div class="sub-node-left">
+                          <!-- 用 index + 1 展示顺序号 -->
+                          <span class="node-type">Task {{ index + 1 }}</span>
+                        </div>
+                        <div class="sub-node-right">
+                          <span class="node-content">{{ subTask.agent_name.replace('_Agent', '') }}</span>
+                          <span class="icon-chart">📊</span>
+                        </div>
+                        <div class="progress-bar blue-bar"></div>
+                      </div>
+                    </div>
+                    <div class="history-connector" v-if="idx < store.taskHistory.length - 1"></div>
+                  </div>
+                </div>
+              </div>
+            </transition>
+          </div>
+
+          <div class="view-toggle">
+            <button :class="['toggle-btn', { active: viewMode === 'split' }]" @click="viewMode = 'split'" title="Split view">
+              <span class="icon">◫</span> Dashboard
+            </button>
+            <button :class="['toggle-btn', { active: viewMode === 'narrative' }]" @click="viewMode = 'narrative'" title="Stream view">
+              <span class="icon">📄</span> Narrative
             </button>
           </div>
 
-          <transition name="fade-slide">
-            <div class="dag-hover-board" v-show="isHovering">
-              <div class="dag-board-header">
-                <h3>Analysis Trace</h3>
-                <span class="sub-text">History Pipeline</span>
-              </div>
-
-              <div class="dag-timeline">
-                <div
-                  class="dag-tree"
-                  v-for="(task, idx) in store.taskHistory"
-                  :key="task.task_id"
-                  :class="{ 'is-active': store.analysisResults.report.report_title === task.results.report.report_title }"
-                  @click="handleTaskSwitch(task)"
-                >
-                  <div class="node goal-node">
-                    <div class="node-header">
-                      <span class="node-type">Goal #{{ idx + 1 }}</span>
-                      <span v-if="task.is_sandbox" class="badge-sandbox">Sandbox</span>
-                    </div>
-                    <div class="node-content" :title="task.query">{{ task.query }}</div>
-                    <div class="progress-bar red-bar"></div>
-                  </div>
-
-                  <div class="sub-nodes-container" v-if="task.results && task.results.tasks">
-                    <div
-                      class="node sub-node"
-                      v-for="([key, subTask], index) in Object.entries(task.results.tasks)"
-                      :key="key"
-                    >
-                      <div class="sub-node-left">
-                        <!-- 用 index + 1 展示顺序号 -->
-                        <span class="node-type">Task {{ index + 1 }}</span>
-                      </div>
-                      <div class="sub-node-right">
-                        <span class="node-content">{{ subTask.agent_name.replace('_Agent', '') }}</span>
-                        <span class="icon-chart">📊</span>
-                      </div>
-                      <div class="progress-bar blue-bar"></div>
-                    </div>
-                  </div>
-                  <div class="history-connector" v-if="idx < store.taskHistory.length - 1"></div>
-                </div>
-              </div>
-            </div>
-          </transition>
         </div>
-
-        <div class="view-toggle">
-          <button :class="['toggle-btn', { active: viewMode === 'split' }]" @click="viewMode = 'split'" title="Split view">
-            <span class="icon">◫</span> Dashboard
-          </button>
-          <button :class="['toggle-btn', { active: viewMode === 'narrative' }]" @click="viewMode = 'narrative'" title="Stream view">
-            <span class="icon">📄</span> Narrative
-          </button>
-        </div>
-
-      </div>
     </header>
+    <transition name="fade">
+      <div v-if="isUploadModalOpen" class="upload-modal-overlay">
+        <div class="upload-modal">
+          <div class="modal-header">
+            <h3>Import Intelligence Corpus</h3>
+            <button class="close-btn" @click="isUploadModalOpen = false">✖</button>
+          </div>
+
+          <div class="modal-body">
+            <label>Dataset Name (Optional)</label>
+            <input type="text" v-model="newDatasetName" placeholder="e.g., 2025 Q4 South China Sea..." class="dataset-name-input" />
+
+            <label>Upload File (.csv, .xlsx, .json)</label>
+            <div class="file-drop-zone">
+              <input type="file" accept=".csv,.xlsx,.json" @change="handleFileSelect" />
+              <p class="file-hint" v-if="!selectedFile">Click to browse or drop file here</p>
+              <p class="file-hint selected" v-else>📁 {{ selectedFile.name }}</p>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+             <button @click="isUploadModalOpen = false" class="cancel-btn">Cancel</button>
+             <button @click="uploadFile" class="upload-btn" :disabled="isUploading">
+               {{ isUploading ? 'Extracting & Standardizing...' : 'Confirm Upload' }}
+             </button>
+          </div>
+        </div>
+      </div>
+    </transition>
     <div class="dashboard-container">
 
       <aside class="left-panel">
@@ -197,11 +343,63 @@ const handleMouseLeave = () => {
 
       <section class="right-panel">
 
-        <!-- 场景 A：正式报告已生成 -->
         <template v-if="store.analysisResults?.report">
 
+          <div class="split-layout" v-if="activeTab !== 'final_report' && currentPhaseData">
 
-          <div v-if="viewMode === 'split'" class="split-layout">
+            <div class="split-text-pane">
+              <div class="phase-summary-card">
+                <h2 class="section-subtitle">{{ currentPhaseData.phase_name }}</h2>
+                <div class="time-badge" style="margin-bottom: 12px; font-size: 13px; color: #409EFF;">
+                  🕒 {{ currentPhaseData.phase_time_range || 'Global' }}
+                </div>
+                <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px;">
+                  {{ currentPhaseData.phase_summary }}
+                </p>
+                <div style="font-size: 12px; color: #606266; background: #fafafa; padding: 10px; border-radius: 4px;">
+                  <div style="margin-bottom: 4px;"><strong>🎯 Core Entities:</strong> {{ currentPhaseData.key_entities?.join(', ') || 'N/A' }}</div>
+                  <div><strong>⚡ Key Events:</strong> {{ currentPhaseData.key_events?.join(', ') || 'N/A' }}</div>
+                </div>
+              </div>
+
+              <article v-for="task in currentPhaseData.subtasks" :key="task.task_id" class="text-section" style="margin-top: 24px;">
+                <h3 class="section-subtitle" style="font-size: 15px; border-left: 3px solid #67C23A; padding-left: 8px;">
+                  🤖 {{ task.agent_name.replace('_Agent', '') }} Analysis
+                </h3>
+
+                <div class="section-content">
+                  <div v-if="task.factual_grounding?.length > 0" style="margin-bottom: 12px;">
+                    <h4 style="font-size: 13px; color: #909399; margin-bottom: 8px;">📌 Objective Facts</h4>
+                    <TraceableText :claims="task.factual_grounding" />
+                  </div>
+
+                  <div v-if="task.strategic_insights && Object.keys(task.strategic_insights).length > 0" style="background: #fdf6ec; padding: 12px; border-radius: 6px;">
+                    <h4 style="font-size: 13px; color: #e6a23c; margin-top: 0; margin-bottom: 8px;">💡 Strategic Insights</h4>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #333;">
+                      <li v-for="(val, key) in task.strategic_insights" :key="'ins-'+key" style="margin-bottom: 6px;">
+                        <strong>{{ key }}:</strong> {{ val }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="split-chart-pane">
+              <template v-for="task in currentPhaseData.subtasks" :key="'chart-'+task.task_id">
+                <ChartRenderer :task="task" v-if="task.visualization_data" />
+              </template>
+
+              <div v-if="currentPhaseData.subtasks.filter(t => t.visualization_data).length === 0" style="text-align: center; color: #909399; margin-top: 40px;">
+                 <span style="font-size: 32px;">📊</span>
+                 <p>No visualization data generated for this phase.</p>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="narrative-layout" v-else-if="activeTab === 'final_report'">
+            <div v-if="viewMode === 'split'" class="split-layout">
 
             <div class="split-text-pane">
   <!--            <div class="executive-summary-card">-->
@@ -241,8 +439,7 @@ const handleMouseLeave = () => {
           </div>
 
           </div>
-
-          <div v-else-if="viewMode === 'narrative'" class="narrative-layout">
+            <div v-else-if="viewMode === 'narrative'" class="narrative-layout">
             <div class="report-container">
 
               <div class="executive-summary-card">
@@ -274,10 +471,10 @@ const handleMouseLeave = () => {
               </div>
             </div>
           </div>
+          </div>
 
         </template>
 
-        <!-- 场景 B：初始状态或预览状态 (全屏地图) -->
         <template v-else>
           <div class="full-screen-map-container">
              <!-- 如果有预览数据，传给 EchartsCanvas；否则传空数组，EchartsCanvas 会渲染空底图 -->
@@ -407,7 +604,7 @@ const handleMouseLeave = () => {
   flex: 1; display: flex; overflow: hidden; /* 核心：让子面板独立滚动 */
 }
 
-.text-section { margin-bottom: 40px; }
+.text-section { margin-bottom: 10px; }
 .section-subtitle { font-size: 1.3rem; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px; font-weight: 600; }
 .section-content p { font-size: 2rem; line-height: 1.8; color: #475569; margin-bottom: 1em; text-align: justify; }
 .conclusion-box { background: #ffffff; padding: 20px; border-radius: 6px; color: #475569; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; margin-top: 40px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
@@ -855,4 +1052,267 @@ const handleMouseLeave = () => {
   from { opacity: 0; transform: translate(-50%, -20px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+/* --- 数据集管理器样式 --- */
+.dataset-manager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.dataset-manager .icon {
+  font-size: 0.9rem;
+  color: #fff;
+  font-weight: bold;
+}
+.dataset-select {
+  background: transparent;
+  color: #fff;
+  border: none;
+  outline: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 250px;
+  text-overflow: ellipsis;
+}
+.dataset-select option {
+  color: #333; /* 下拉列表展开后的文字颜色 */
+}
+.upload-trigger-btn {
+  background: #409EFF;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.upload-trigger-btn:hover {
+  background: #66b1ff;
+  transform: translateY(-1px);
+}
+
+/* --- 上传弹窗样式 --- */
+.upload-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 9999;
+}
+.upload-modal {
+  background: #fff;
+  width: 450px;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.modal-header {
+  padding: 16px 20px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.modal-header h3 { margin: 0; font-size: 1.1rem; color: #303133; }
+.modal-header .close-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #909399; }
+.modal-body {
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.modal-body label { font-size: 0.85rem; font-weight: bold; color: #606266; }
+.dataset-name-input {
+  padding: 10px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 0.95rem; outline: none;
+}
+.dataset-name-input:focus { border-color: #409EFF; }
+.file-drop-zone {
+  position: relative;
+  height: 120px;
+  border: 2px dashed #dcdfe6;
+  border-radius: 8px;
+  display: flex; justify-content: center; align-items: center;
+  background: #fafafa;
+  transition: all 0.3s ease;
+}
+.file-drop-zone:hover { border-color: #409EFF; background: #ecf5ff; }
+.file-drop-zone input[type="file"] {
+  position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+}
+.file-hint { color: #909399; font-size: 0.9rem; pointer-events: none; }
+.file-hint.selected { color: #67C23A; font-weight: bold; }
+.modal-actions {
+  padding: 16px 20px; background: #fafafa; border-top: 1px solid #ebeef5;
+  display: flex; justify-content: flex-end; gap: 12px;
+}
+.cancel-btn { padding: 8px 16px; background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; cursor: pointer; color: #606266;}
+.upload-btn { padding: 8px 16px; background: #409EFF; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold;}
+.upload-btn:disabled { background: #a0cfff; cursor: not-allowed; }
+
+/* 弹窗渐变动画 */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ================= Stepper 导航条 ================= */
+/* 移除原先作为块级元素的背景和 sticky，以适应顶栏 */
+.phase-stepper-container {
+  display: flex;
+  align-items: center;
+}
+
+.phase-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px; /* 稍微缩小 gap 让顶栏不至于过挤 */
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px; /* 调整 padding 以适配顶栏高度 */
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent; /* 未激活时背景透明 */
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.step-item:hover {
+  background: #f0f4f8;
+}
+
+.step-item.active {
+  background: #ecf5ff;
+  border-color: #b3d8ff;
+  /* 如果你的顶栏已经有阴影，建议移除这里的 box-shadow 保持清爽 */
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+}
+
+.step-marker {
+  width: 24px;
+  height: 24px;
+  background: #e4e7ed;
+  color: #909399;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.step-item.active .step-marker {
+  background: #409EFF;
+  color: #fff;
+}
+
+.step-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.step-label {
+  font-size: 8px;
+  color: #909399;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.step-title {
+  font-size: 8px;
+  color: #606266;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.step-item.active .step-title {
+  color: #409EFF;
+}
+
+.step-connector {
+  color: #dcdfe6;
+  font-size: 14px;
+}
+/* ================= 左右分屏布局 ================= */
+.phase-view-layout {
+  display: grid;
+  grid-template-columns: 45% 55%; /* 左文右图的黄金比例 */
+  gap: 24px;
+  padding: 24px;
+  height: calc(100vh - 160px); /* 减去头部高度，实现内部滚动 */
+}
+
+.phase-left-pane, .phase-right-pane {
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* 隐藏滚动条让视觉更干净 */
+.phase-left-pane::-webkit-scrollbar, .phase-right-pane::-webkit-scrollbar { width: 6px; }
+.phase-left-pane::-webkit-scrollbar-thumb, .phase-right-pane::-webkit-scrollbar-thumb { background: #dcdfe6; border-radius: 4px; }
+
+/* ================= 左侧：文本分析卡片 ================= */
+.phase-summary-card {
+  background: #fff;
+  border-left: 4px solid #409EFF;
+  padding: 20px;
+  border-radius: 4px 8px 8px 4px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+}
+.summary-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.summary-header h3 { margin: 0; font-size: 18px; color: #303133; }
+.time-badge { font-size: 12px; background: #f0f2f5; padding: 4px 8px; border-radius: 4px; color: #606266; font-weight: bold; }
+.summary-text { font-size: 15px; line-height: 1.6; color: #444; margin-bottom: 16px; text-align: justify; }
+.summary-meta { font-size: 13px; color: #606266; background: #fafafa; padding: 12px; border-radius: 6px; }
+.meta-item { margin-bottom: 6px; }
+.meta-item:last-child { margin-bottom: 0; }
+
+.agent-analysis-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  position: relative;
+}
+.agent-badge {
+  display: inline-block;
+  background: #fdf6ec; color: #e6a23c;
+  font-size: 12px; font-weight: bold;
+  padding: 4px 10px; border-radius: 12px;
+  margin-bottom: 12px;
+}
+.section-title { font-size: 13px; color: #909399; text-transform: uppercase; margin: 0 0 10px 0; border-bottom: 1px solid #f0f2f5; padding-bottom: 4px; }
+.fact-list, .insight-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: #333; }
+.fact-list li, .insight-list li { margin-bottom: 8px; text-align: justify; }
+
+.insight-section { margin-top: 16px; background: #f4f9ff; padding: 12px; border-radius: 6px; border-left: 2px solid #b3d8ff;}
+.insight-list { padding-left: 16px; }
+.insight-list li { color: #2a5caa; }
+
+.citation-badge { color: #409EFF; cursor: pointer; font-size: 11px; margin-left: 4px; font-weight: bold; }
+
+/* ================= 右侧：图表占位符 ================= */
+.empty-chart-placeholder {
+  height: 100%; min-height: 300px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  background: #fafafa; border: 2px dashed #e4e7ed; border-radius: 8px; color: #909399;
+}
+.empty-chart-placeholder .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+
+/* 最终报告视图容器限制宽度以适合阅读 */
+.final-report-layout { padding: 40px; display: flex; justify-content: center; overflow-y: auto; height: calc(100vh - 160px); }
+.report-container { max-width: 900px; width: 100%; }
 </style>

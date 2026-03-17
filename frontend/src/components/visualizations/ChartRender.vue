@@ -38,7 +38,7 @@ const toggleFullscreen = () => {
     <div class="chart-box" >
       <div class="chart-header"> Topic Evolution Ridgeline</div>
       <div class="chart-content">
-        <EchartsCanvas chartType="ridgeline_plot" :chartData="task.visualization_data.ridgeline_data" />
+        <VegaLiteChart chartType="theme_river" :chartData="task.visualization_data.ridgeline_data" />
       </div>
     </div>
   </template>

@@ -9,6 +9,28 @@ export const useChatStore = defineStore('chat', () => {
   // 尝试从本地读取 session，如果没有则新建
   const sessionId = ref(localStorage.getItem('mnva_session_id') || 'session_' + Date.now())
 
+  // 初始化写入 session
+  if (!localStorage.getItem('mnva_session_id')) {
+    localStorage.setItem('mnva_session_id', sessionId.value)
+  }
+  // ==========================================
+  // === 🌟 2. 新增：数据仓库状态与持久化 ===
+  // ==========================================
+  const availableDatasets = ref([])
+  // 尝试从本地读取上次选中的数据集
+  const activeDatasetId = ref(localStorage.getItem('mnva_active_dataset_id') || '')
+  // 🌟 新增：专门用于修改 Dataset ID 的 Action
+  const setActiveDataset = (id) => {
+    activeDatasetId.value = id
+  }
+  // 监听数据集切换，自动保存到本地浏览器缓存
+  watch(activeDatasetId, (newId) => {
+    if (newId) {
+      localStorage.setItem('mnva_active_dataset_id', newId)
+    } else {
+      localStorage.removeItem('mnva_active_dataset_id')
+    }
+  })
   // 消息结构升级：
   // type: 'text' | 'process' (思维链) | 'plan_card' (审批卡片)
   // content: 文本内容
@@ -130,6 +152,31 @@ export const useChatStore = defineStore('chat', () => {
     },
     { deep: true }
   )
+
+  // ==========================================
+  // === 🌟 3. 新增：获取数据集列表的方法 ===
+  // ==========================================
+  const fetchDatasets = async () => {
+    try {
+      // 这里的 URL 请替换为你后端的实际地址
+      const response = await fetch('http://localhost:5000/api/list_datasets')
+      const data = await response.json()
+
+      if (data.datasets) {
+        availableDatasets.value = data.datasets
+
+        // 智能选择逻辑：
+        // 如果当前没有选中的数据集，或者之前选中的数据集被在后台删除了，默认选中最新上传的一个
+        const isCurrentValid = availableDatasets.value.some(ds => ds.dataset_id === activeDatasetId.value)
+
+        if ((!activeDatasetId.value || !isCurrentValid) && data.datasets.length > 0) {
+          activeDatasetId.value = data.datasets[0].dataset_id // 默认取第一个（最新的）
+        }
+      }
+    } catch (error) {
+      console.error('获取数据集列表失败:', error)
+    }
+  }
 
   // 初始化加载
   loadFromStorage()
@@ -339,7 +386,8 @@ export const useChatStore = defineStore('chat', () => {
       const requestPayload = {
         user_id: userId.value,
         session_id: sessionId.value,
-        query: text
+        query: text,
+        dataset_id: activeDatasetId.value, // <--- 这里是打通大动脉的关键！
       }
       if (intentOverride) requestPayload.intent_override = intentOverride
 
@@ -415,6 +463,8 @@ export const useChatStore = defineStore('chat', () => {
     evidenceAnnotations,
     toggleEvidenceAnnotation,
     clearAnnotationsForClaim,
-    getAnnotationStatus
+    getAnnotationStatus,
+    // 暴露新增的
+    availableDatasets, activeDatasetId, fetchDatasets, setActiveDataset
   }
 })

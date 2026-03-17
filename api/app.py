@@ -1,7 +1,10 @@
 # app.py
 from flask import Flask
 from flask_cors import CORS
+# 主应用入口文件（如app.py）
 from api.chat_routes import chat_bp
+from api.data_routes import data_bp
+
 
 
 def create_app():
@@ -12,7 +15,9 @@ def create_app():
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
     # 注册路由蓝图
+    # 注册蓝图，统一添加/api前缀（与原路由格式保持一致）
     app.register_blueprint(chat_bp, url_prefix='/api')
+    app.register_blueprint(data_bp, url_prefix='/api')
 
     @app.route('/health', methods=['GET'])
     def health_check():

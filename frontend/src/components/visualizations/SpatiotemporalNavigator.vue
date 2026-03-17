@@ -102,9 +102,9 @@ const renderTimeline = () => {
 
       // 严格校验格式
       if (!phase.time_range || !phase.time_range.includes(' to ')) return;
-      const [startStr, endStr] = phase.time_range.split(' to ');
-      const startDate = new Date(startStr);
-      const endDate = new Date(endStr);
+      // const [startStr, endStr] = phase.time_range.split(' to ');
+      const startDate = new Date(phase.start_date);
+      const endDate = new Date(phase.end_date);
       // 过滤无效日期
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return;
 

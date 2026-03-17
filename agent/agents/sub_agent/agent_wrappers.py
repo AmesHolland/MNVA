@@ -25,8 +25,7 @@ def global_monitor_agent_wrapper(args: dict) -> dict:
         # 🌟 核心修正：精准透传双轨数据
         "factual_grounding": result.get("factual_grounding", []),
         "strategic_insights": result.get("strategic_insights", {}),
-        "visualization_data": result.get("visualization_data", {}),
-        "structured_insight": result.get("structured_insight", {})
+        "visualization_data": result.get("visualization_data", {})
     }
 
 
@@ -52,8 +51,7 @@ def deep_dive_agent_wrapper(args: dict) -> dict:
         # 🌟 核心修正：精准透传双轨数据
         "factual_grounding": result.get("factual_grounding", []),
         "strategic_insights": result.get("strategic_insights", {}),
-        "visualization_data": result.get("visualization_data", {}),
-        "structured_insight": result.get("structured_insight", {})
+        "visualization_data": result.get("visualization_data", {})
     }
 
 
@@ -75,8 +73,7 @@ def relation_miner_agent_wrapper(args: dict) -> dict:
         # 🌟 核心修正：精准透传双轨数据
         "factual_grounding": result.get("factual_grounding", []),
         "strategic_insights": result.get("strategic_insights", {}),
-        "visualization_data": result.get("visualization_data", {}),
-        "structured_insight": result.get("structured_insight", {})
+        "visualization_data": result.get("visualization_data", {})
     }
 
 
@@ -93,7 +90,6 @@ def search_agent_wrapper(args: dict) -> dict:
         "strategic_insights": {},
         "visualization_data": None,
         "news_list": news_list,
-        "structured_insight": {}
     }
 
 

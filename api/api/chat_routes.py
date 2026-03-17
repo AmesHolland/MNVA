@@ -98,8 +98,9 @@ def chat():
 
     thread_id = f"{user_id}_{session_id}"
     topic = data.get('query')
-    intent_override = data.get('intent_override') # 获取前端传来的意图覆盖
+    intent_override = None # data.get('intent_override') # 获取前端传来的意图覆盖
 
+    dataset_id = data.get('dataset_id', None)
     # 配置 LangGraph 记忆的上下文
     config = {"configurable": {"thread_id": thread_id}}
     
@@ -139,7 +140,7 @@ def chat():
             "current_phase": "",
             "iteration_count": 0,
             "research_list": [],
-            "dataset_id": 1,
+            "dataset_id": dataset_id,
             "output_language": "Simplified Chinese", # 或 "English", "Japanese"
             "task_history": [] # 初始化任务历史
         }

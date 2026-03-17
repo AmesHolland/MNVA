@@ -195,7 +195,77 @@ const renderChart = async () => {
       }]
     }
   }
-
+  else if (props.chartType === 'theme_river') { // 建议修改chartType标识
+    spec = {
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      data: { values: props.chartData },
+      width: "container",
+      height: "container",
+      autosize: { type: "fit", contains: "padding" },
+      title: null,
+      // 核心修改1：mark保持area，但插值更平滑，适配流图
+      mark: {
+        type: "area",
+        interpolate: "monotone", // 平滑曲线，符合主题河流图视觉
+        fillOpacity: 0.8,
+        stroke: "white",
+        strokeWidth: 0.5
+      },
+      encoding: {
+        // X轴：保留时间维度，优化格式
+        x: {
+          field: "date",
+          type: "temporal",
+          axis: {
+            title: null,
+            format: "%m-%d",
+            grid: false,
+            tickCount: 8, // 适当增加刻度，适配流图宽度
+            labelAngle: 0 // 标签水平显示，更易读
+          }
+        },
+        // 核心修改2：Y轴改为堆叠维度，用stack: "center"实现流状居中堆叠
+        y: {
+          field: "count",
+          type: "quantitative",
+          axis: null,
+          stack: "center", // 关键：居中堆叠，形成河流状（默认"zero"是从0开始堆叠）
+          title: null
+        },
+        // 核心修改3：移除row分面，用color+stack区分主题
+        color: {
+          field: "topic_name",
+          type: "nominal",
+          scale: { scheme: "tableau10" },
+          // legend: { // 可选：显示图例，方便识别主题（山脊图无图例，流图建议保留）
+          //   title: null,
+          //   orient: "right",
+          //   labelFontSize: 11
+          // }
+          legend: null
+        },
+        // 核心修改4：用detail区分不同主题，配合stack实现流的分离
+        detail: {
+          field: "topic_name",
+          type: "nominal"
+        },
+        // 保留原tooltip，交互不变
+        tooltip: [
+          { field: "date", type: "temporal", title: "Date", format: "%Y-%m-%d" },
+          { field: "topic_name", type: "nominal", title: "Topic" },
+          { field: "count", type: "quantitative", title: "Article Count" }
+        ]
+      },
+      config: {
+        view: { stroke: null },
+        axis: { domain: false },
+        // 移除facet配置（因为没有row分面了）
+        area: {
+          line: true // 确保流之间的边界线可见
+        }
+      }
+    }
+  }
   // ==========================================
   // 【最核心】：渲染并挂载 Vega 点击事件！
   // ==========================================
