@@ -74,7 +74,7 @@ const toggleFullscreen = () => {
       </div>
 
       <div class="chart-content">
-        <EchartsCanvas chartType="relation_graph" :chartData="task.visualization_data.graph_chart" />
+        <EchartsCanvas :key="isFullscreen" chartType="relation_graph" :chartData="task.visualization_data.graph_chart" />
       </div>
 
     </div>

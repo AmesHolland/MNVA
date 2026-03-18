@@ -70,15 +70,20 @@ const isClaimDimmed = (claim) => {
         )"
         title="Click to view the original evidence"
       >
-        [{{ claim.source_ids.length }}]
+        [{{ claim.source_ids.length }} source]
       </sup>
 
       <sup
         v-if="claim.is_subjective_insight"
         class="insight-badge"
+        @click.stop="store.openEvidence(
+          claim.source_ids,
+          claim.claim_id || claim.content || claim.statement,
+          claim.content || claim.statement
+        )"
         title="AI Strategic Deduction and Insights"
       >
-        💡 AI Insight
+        💡 AI Insight [{{ claim.source_ids.length }}]
       </sup>
 
       <span class="sentence-spacer"> </span>

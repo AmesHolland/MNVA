@@ -1,11 +1,19 @@
 import json
 
 
-def get_intent_prompt(topic: str, today: str, output_language: str = "English") -> str:
+def get_intent_prompt(topic: str, today: str, output_language: str = "English", memory_string="") -> str:
     return f"""
+### [RESEARCH TRAJECTORY]
+This is the condensed history of reports you have generated for the user in this session:
+{memory_string}    
+
 # Context
 Today is {today}.
 User Query: {topic}
+
+### [RESEARCH TRAJECTORY]
+This is the condensed history of reports you have generated for the user in this session:
+{memory_string}
 
 # Role
 You are a senior intelligence analysis expert specializing in maritime geopolitics, maritime security, and marine resources.
@@ -403,7 +411,7 @@ You must strictly separate your response into Objective Facts and Subjective Ins
    - What is the underlying core conflict?
    - What are the unstated, hidden intentions of the actors involved?
    - What is your predictive forecast for the near future? 
-   (You do NOT need to attach DOC_IDs to your insights, this is your space to freely reason and deduce like a human expert).
+   (You need to attach DOC_IDs to your insights, this is your space to freely reason and deduce like a human expert).
 3. **Topic Clustering & Shift:** Group the news into 3-5 major coherent topics. Describe the `temporal_pattern` of each topic.
 4. **Dynamic Spatial Extraction:** Extract geographic locations with EXACT DATES (YYYY-MM-DD) and a Latitude/Longitude. 
 5. **Temporal Aggregation (Ridgeline Plot Data):** Count the number of articles per day for each identified topic.
@@ -442,7 +450,8 @@ You must strictly separate your response into Objective Evidence and Subjective 
    - What is this entity's typical **behavioral pattern** (modus operandi)?
    - What are their **hidden intentions** behind these surface-level actions?
    - What is their **future trajectory** (what will they likely do next month)?
-   - You do NOT need to attach DOC_IDs here; use your expert analytical reasoning.
+   - **CRITICAL:** Every statement, claim, and event MUST be backed by the provided news snippets. You must record the exact `[DOC_ID: xxx]` of the articles.
+
 
 ### INPUT NEWS
 (Each article is strictly labeled with [DOC_ID: xxx])
@@ -483,7 +492,7 @@ You must strictly separate your response into Objective Facts and Subjective Ins
    - **Power Dynamics:** Who is the puppet master? Who is the central hub? Who is being isolated?
    - **Alliances vs. Frictions:** What unspoken alliances are forming? Where are the true fault lines of conflict hidden behind diplomatic statements?
    - **Forecast:** How will this network topology change in the near future? 
-   - You do NOT need to attach DOC_IDs here; use your expert analytical reasoning.
+   - You need to attach DOC_IDs here; use your expert analytical reasoning.
 
 ### INPUT TEXT
 (Each article is strictly labeled with [DOC_ID: xxx])
@@ -541,7 +550,7 @@ You must generate TWO parallel analytical structures within your report:
    - For EVERY single `claim` in the sections, you MUST correctly assign the `source_subtask` (Task ID) and the `phase_name` that this information originated from. 
    - Look at the `### [METADATA]` header of each context block to find the correct Task ID and Phase Name.
    - If the claim is an objective fact, set `is_subjective_insight` to false and list the `source_ids`.
-   - If the claim is an analytical deduction or forecast based on the Subjective Analysis blocks, set `is_subjective_insight` to true (you can leave `source_ids` empty for these).
+   - If the claim is an analytical deduction or forecast based on the Subjective Analysis blocks, set `is_subjective_insight` to true and list the `source_ids`).
 
 4. **Task Referencing:** Ensure `ref_task_ids` accurately maps the sub-task IDs referenced in a specific section, so the frontend can display the correct charts next to your text.
 

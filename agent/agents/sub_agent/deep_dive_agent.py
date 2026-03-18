@@ -6,16 +6,10 @@ from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
 
 from agent.agents.schemas import Claim
-from agent.config.llm_config import llm_qw_quick, llm_qw_thinking
+from agent.agents.schemas import StrategicInsights
+from agent.config.llm_config import llm_qw_thinking, llm_thinking
 from agent.config.prompt_template import DEEP_DIVE_PROMPT
 from agent.tools.news_manager import get_news_by_id
-
-from pydantic import BaseModel, Field
-from typing import List, Optional
-
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from agent.agents.schemas import Claim
 
 
 # 1. 行为烈度评分 (统一小写命名，方便后续 pandas 处理)
@@ -57,7 +51,6 @@ class EntityStrategicInsights(BaseModel):
     future_trajectory: str = Field(
         description="Forecast of the entity's likely next moves based on its current posture and historical habits.")
 
-
 # 4. 完整输出结构
 class DeepDiveOutput(BaseModel):
     entity_name: str = Field(description="The normalized name of the target entity.")
@@ -66,8 +59,8 @@ class DeepDiveOutput(BaseModel):
     # === 🌟 双轨制输出 ===
     factual_grounding: List[Claim] = Field(
         description="Objective, chronological summary of the entity's actions. MUST be traced to source_ids.")
-    strategic_insights: EntityStrategicInsights = Field(
-        description="Deep, subjective behavioral profiling and predictions. No source_ids required.")
+    strategic_insights: StrategicInsights = Field(
+        description="Deep, subjective behavioral profiling and predictions. MUST be strictly traced to source_ids.")
     evolution_phases: List[EvolutionPhase] = Field(
         description="Chronological phases telling the story of the entity's spatiotemporal evolution.")
     events: List[EventNode] = Field(description="Chronological list of discrete events associated with the entity.")
@@ -75,7 +68,7 @@ class DeepDiveOutput(BaseModel):
 # --- 初始化组件 (通常在 graph 构建前完成) ---
 # --- 初始化组件 ---
 # 这里一定要用 llm_qw_thinking，因为涉及到人物画像和预测，需要极强的推理能力！
-llm = llm_qw_thinking
+llm = llm_thinking
 parser = JsonOutputParser(pydantic_object=DeepDiveOutput)
 
 prompt = PromptTemplate(

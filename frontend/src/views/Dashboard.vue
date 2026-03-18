@@ -356,10 +356,6 @@ const currentPhaseData = computed(() => {
                 <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px;">
                   {{ currentPhaseData.phase_summary }}
                 </p>
-                <div style="font-size: 12px; color: #606266; background: #fafafa; padding: 10px; border-radius: 4px;">
-                  <div style="margin-bottom: 4px;"><strong>🎯 Core Entities:</strong> {{ currentPhaseData.key_entities?.join(', ') || 'N/A' }}</div>
-                  <div><strong>⚡ Key Events:</strong> {{ currentPhaseData.key_events?.join(', ') || 'N/A' }}</div>
-                </div>
               </div>
 
               <article v-for="task in currentPhaseData.subtasks" :key="task.task_id" class="text-section" style="margin-top: 24px;">
@@ -373,11 +369,22 @@ const currentPhaseData = computed(() => {
                     <TraceableText :claims="task.factual_grounding" />
                   </div>
 
-                  <div v-if="task.strategic_insights && Object.keys(task.strategic_insights).length > 0" style="background: #fdf6ec; padding: 12px; border-radius: 6px;">
-                    <h4 style="font-size: 13px; color: #e6a23c; margin-top: 0; margin-bottom: 8px;">💡 Strategic Insights</h4>
-                    <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #333;">
-                      <li v-for="(val, key) in task.strategic_insights" :key="'ins-'+key" style="margin-bottom: 6px;">
-                        <strong>{{ key }}:</strong> {{ val }}
+                  <div v-if="task.strategic_insights && Object.keys(task.strategic_insights).length > 0" class="analysis-section insight-section">
+                    <h4 class="section-title">💡 Strategic Insights</h4>
+                    <ul class="insight-list">
+                      <li v-for="(val, key) in task.strategic_insights" :key="'ins-'+key">
+                        <strong>{{ key.replace('_', ' ').toUpperCase() }}:</strong>
+
+                        {{ val.statement || val }}
+
+                        <sup
+                          v-if="val.source_ids && val.source_ids.length > 0"
+                          class="citation-badge insight-citation"
+                          @click.stop="store.openEvidence(val.source_ids, key, val.statement)"
+                          title="View inspiring evidence"
+                        >
+                          [{{ val.source_ids.length }} src]
+                        </sup>
                       </li>
                     </ul>
                   </div>
@@ -418,11 +425,6 @@ const currentPhaseData = computed(() => {
               </div>
             </div>
 
-<!--            <div class="split-chart-pane">-->
-<!--              <template v-for="task in allUniqueTasks" :key="'chart-'+task.task_id">-->
-<!--                <ChartRenderer :task="task" />-->
-<!--              </template>-->
-<!--            </div>-->
             <div class="split-chart-pane">
 
                 <div class="chart-box" style="grid-column: 1 / -1; " v-if="unifiedMapData">
@@ -1315,4 +1317,14 @@ const currentPhaseData = computed(() => {
 /* 最终报告视图容器限制宽度以适合阅读 */
 .final-report-layout { padding: 40px; display: flex; justify-content: center; overflow-y: auto; height: calc(100vh - 160px); }
 .report-container { max-width: 900px; width: 100%; }
+.insight-citation {
+  color: #e6a23c;
+  background-color: #fdf6ec;
+  border: 1px solid #f3d19e;
+}
+.insight-citation:hover {
+  background-color: #e6a23c;
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(230, 162, 60, 0.3);
+}
 </style>

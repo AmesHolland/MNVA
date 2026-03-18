@@ -1,4 +1,4 @@
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAI
 from langchain_anthropic import ChatAnthropic
 
 from zhipuai import ZhipuAI
@@ -50,7 +50,7 @@ model_kwargs = {
 llm_qw_quick = ChatOpenAI(
         api_key=QWEN_API_KEY,  # 硅基流动API Key
         base_url=QWEN_BASE_URL,  # 对话接口完整URL（你提供的无需补全）
-        model="qwen3.5-flash-2026-02-23",  # 硅基流动对话模型名
+        model="qwen3.5-plus",  # 硅基流动对话模型名
         temperature=0.2,  # 随机性
         max_retries=3,  # 重试次数
         # timeout=60,  # 超时时间
@@ -60,32 +60,34 @@ llm_qw_quick = ChatOpenAI(
 llm_qw_thinking = ChatOpenAI(
         api_key=QWEN_API_KEY,  # 硅基流动API Key
         base_url=QWEN_BASE_URL,  # 对话接口完整URL（你提供的无需补全）
-        model="qwen3.5-flash-2026-02-23",  # 硅基流动对话模型名 qwen3.5-flash-2026-02-23
+        model="qwen3.5-plus",  # 硅基流动对话模型名 qwen3.5-flash-2026-02-23
         temperature=0.7,  # 随机性
         max_retries=3,  # 重试次数
         # timeout=60,  # 超时时间
-        model_kwargs=model_kwargs
+        # model_kwargs=model_kwargs
     )
 
 # 快速模型 - Haiku 4.5，速度快，适合简单任务
-llm_claude_quick = ChatAnthropic(
+llm_claude_quick = ChatOpenAI(
     base_url=ANTHROPIC_BASE_URL,
     api_key=ANTHROPIC_API_KEY,
-    model="claude-haiku-4-5-20251001",
+    model="gemini-3.1-fast",
     temperature=0.3,
     max_retries=3,
 )
 
 # 思考模型 - Sonnet 4.5，开启 extended thinking，适合复杂推理
-llm_claude_thinking = ChatAnthropic(
+llm_claude_thinking = ChatOpenAI(
     api_key=ANTHROPIC_API_KEY,
     base_url=ANTHROPIC_BASE_URL,
-    model="claude-sonnet-4-5-20250929",
-    temperature=1,  # 开启 thinking 时，temperature 必须设为 1
+    model="gemini-3.1-pro",
+    temperature=0.7,  # 开启 thinking 时，temperature 必须设为 1
     max_retries=3,
-    thinking={
-        "type": "enabled",
-    },
+    # model_kwargs={
+    #     "thinking": {
+    #         "type": "enabled",
+    #     }
+    # },
 )
 
 
@@ -97,3 +99,28 @@ llm_ds = ChatOpenAI(
         max_retries=3,  # 重试次数
         timeout=60,  # 超时时间
 )
+
+# if __name__ == '__main__':
+#     from openai import OpenAI
+#
+#     client = OpenAI(
+#         base_url=ANTHROPIC_BASE_URL,
+#         # sk-xxx替换为自己的key
+#         api_key=ANTHROPIC_API_KEY
+#     )
+#     completion = client.chat.completions.create(
+#         model="claude-sonnet-4-6",
+#         messages=[
+#             {"role": "system", "content": "You are a helpful assistant."},
+#             {"role": "user", "content": "Hello!"}
+#         ]
+#     )
+#     print(completion)
+# LangChain调用示例
+# langchain_response = llm_claude_quick.invoke("Hello!")
+# print("LangChain响应:", langchain_response.content)
+
+# llm_thinking = llm_claude_thinking
+# llm_quick = llm_claude_quick
+llm_thinking = llm_qw_thinking
+llm_quick = llm_qw_quick

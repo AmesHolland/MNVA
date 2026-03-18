@@ -1,5 +1,5 @@
-from typing import List, Literal, Union, Optional
-from typing import TypedDict, Annotated, Dict, Any
+from typing import List, Dict, Any, Literal
+from typing import TypedDict, Annotated
 
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
@@ -30,6 +30,11 @@ class ResearchState(TypedDict):
     # 🌟 新增：存放当前工作台选中的数据集 ID
     dataset_id: str
     output_language : str
+    # 🌟 新增：系统记忆相关字段
+    report_count: int
+    # 如果你用的是 LangGraph，建议用 operator.add 这样每次 yield/return 会自动 append
+    # 如果不是，直接用普通的 list 也可以
+    research_trajectory: list
 
 # === 整合节点的溯源输出模型 ===
 class Claim(BaseModel):
@@ -89,23 +94,6 @@ class SpatiotemporalBlueprint(BaseModel):
     overall_narrative: str = Field(description="对整个事件时空演变轨迹的宏观定性总结（50字以内）")
     phases: List[EvolutionPhase] = Field(description="按时间顺序排列的演化阶段列表，通常为 2 到 4 个阶段")
 
-# # ==========================================
-# # 1. 定义规划蓝图的 Pydantic 模型 (保持不变)
-# # ==========================================
-# class TaskNode(BaseModel):
-#     task_id: int = Field(description="任务的唯一执行序号")
-#     agent: str = Field(description="需要调用的探员名称，例如 'Global_Monitor_Agent'")
-#     action: str = Field(description="该任务的具体执行目标和指令")
-#     args: Dict[str, Any] = Field(description="传递给探员的具体参数，必须包含 target_phase_ids")
-#     dependency: Optional[Union[int, List[int]]] = Field(description="该任务依赖的前置 task_id，如果没有则为 null")
-#
-# class ExecutionPlan(BaseModel):
-#     total_plan_logic: str = Field(description="简述整体调度逻辑，尤其是如何根据时空蓝图进行动态路由的（1-2句话）")
-#     tasks: List[TaskNode] = Field(description="按执行顺序排列的任务列表")
-
-from typing import List, Dict, Any, Literal
-from pydantic import BaseModel, Field, model_validator
-
 
 class TaskNode(BaseModel):
     task_id: str = Field(description="Unique task id, e.g. 'global_monitor_phase_1'")
@@ -163,3 +151,14 @@ class ExecutionPlan(BaseModel):
     tasks: List[TaskNode] = Field(
         description="A list of phase-aware tasks that can be executed as a DAG"
     )
+
+# === 新增：可溯源的洞察基类 ===
+class TraceableInsight(BaseModel):
+    statement: str = Field(description="The analytical insight, prediction, or deduction statement.")
+    source_ids: List[str] = Field(description="List of exact DOC_IDs that inspired or logically support this subjective insight. DO NOT fabricate IDs.")
+
+# === 升级：释放大模型思考能力的洞察模型 ===
+class StrategicInsights(BaseModel):
+    core_conflict: TraceableInsight = Field(description="Highly analytical summary of the core geopolitical contradictions or friction points.")
+    hidden_intentions: TraceableInsight = Field(description="Deep analysis of the underlying strategic motives of the key actors involved.")
+    trend_prediction: TraceableInsight = Field(description="A forward-looking forecast of how this situation is likely to evolve.")

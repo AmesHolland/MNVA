@@ -14,7 +14,8 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 
 from agent.agents.sub_agent.agent_wrappers import AGENT_MAPPING
-from agent.config.llm_config import llm_qw_quick, llm_qw_thinking, llm_claude_quick, llm_claude_thinking
+from agent.config.llm_config import llm_qw_quick, llm_qw_thinking, llm_claude_quick, llm_claude_thinking, llm_quick, \
+    llm_thinking
 from agent.config.prompt_template import get_intent_prompt, get_data_profiling_prompt, INTEGRATING_PROMPT, \
     ANCHOR_PROMPT, PLANNING_PROMPT, get_profile_merge_prompt
 from agent.tools.base import safe_parse_json
@@ -22,10 +23,10 @@ from ..schemas import ResearchState, FinalReport, SpatiotemporalBlueprint, Execu
 from ...rag.mysql_store import MySQLDB
 from ...tools.data_manager import retrieve_news
 
-# model_quick = llm_claude_quick
-# model_thinking = llm_claude_thinking
-model_quick = llm_qw_quick
-model_thinking = llm_qw_thinking
+model_quick = llm_quick
+model_thinking = llm_thinking
+# model_quick = llm_qw_quick
+# model_thinking = llm_qw_thinking
 
 
 
@@ -34,19 +35,43 @@ from datetime import datetime
 def intent_node(state: ResearchState) -> dict:
     print("\n" + "=" * 50 + "\n🧭 用户意图识别阶段...")
 
-    # 沙盒请求直接跳过
-    if state.get("intent") and state.get("intent").get("is_sandbox_request"):
-        print("   沙盒请求，跳过意图识别。")
-        return {
-            "intent": state.get("intent"),
-            "current_phase": "retrieving",
-            "messages": [AIMessage(content="接收到沙盒分析请求，准备进行局部数据检索...")]
-        }
+    # ==========================================
+    # 🌟 核心提取：将情景记忆格式化为文本大纲
+    # ==========================================
+    trajectory = state.get("research_trajectory", [])
+    report_count = state.get("report_count", 0)
 
+    memory_string = "No prior research history in this session."
+
+    if report_count > 0:
+        memory_string = f"You have completed {report_count} research rounds in this session.\n\n"
+        for item in trajectory:
+            memory_string += f"### Round {item['round']}\n"
+            memory_string += f"- User Query: {item['user_query']}\n"
+            memory_string += f"- Report Title Generated: {item['report_title']}\n"
+            memory_string += f"- Core Conclusion: {item['executive_summary']}\n"
+            memory_string += f"- Phases Analyzed: {', '.join(item['phases_covered'])}\n\n"
+            # 🌟 新增打印子任务执行记录
+            memory_string += f"- Sub-Agents Deployed:\n"
+            for task_fp in item.get('subtasks_executed', []):
+                memory_string += f"  * {task_fp}\n"
+            memory_string += "\n"
+
+    # 把这个 memory_string 传给你的 prompt 生成器
     topic = state["research_topic"]
     output_language = state["output_language"]
     today = datetime.now().strftime("%Y-%m-%d")
-    intent_prompt = get_intent_prompt(topic, today, output_language)
+
+    # 沙盒请求直接跳过
+    # if state.get("intent") and state.get("intent").get("is_sandbox_request"):
+    #     print("   沙盒请求，跳过意图识别。")
+    #     return {
+    #         "intent": state.get("intent"),
+    #         "current_phase": "retrieving",
+    #         "messages": [AIMessage(content="接收到沙盒分析请求，准备进行局部数据检索...")]
+    #     }
+
+    intent_prompt = get_intent_prompt(topic, today, output_language, memory_string)
 
     try:
         response = model_quick.invoke([HumanMessage(content=intent_prompt)])
@@ -805,7 +830,7 @@ def _to_list(value):
     return value if isinstance(value, list) else [value]
 
 
-def _normalize_plan_tasks(tasks: list[dict], output_language: str = "English") -> list[dict]:
+def _normalize_plan_tasks(tasks: list[dict], output_language: str) -> list[dict]:
     """
     适配新 schema：
     - task_id: str
@@ -973,7 +998,8 @@ def analyzing_node(state: dict) -> dict:
 
     plan = state.get("plan", {})
     raw_tasks = plan.get("tasks", [])
-    tasks = _normalize_plan_tasks(raw_tasks)
+    output_language = state.get("output_language", "English")
+    tasks = _normalize_plan_tasks(raw_tasks, output_language)
 
     if not tasks:
         return {
@@ -1129,9 +1155,19 @@ def integrating_node(state: ResearchState) -> dict:
 
         block += "\n【Subjective Analysis (Strategic Insights)】:\n"
         if isinstance(insights, dict) and insights:
-            for key, value in insights.items():
-                formatted_key = key.replace('_', ' ').title()
-                block += f"  - {formatted_key}: {value}\n"
+            for key, val in insights.items():
+                # 兼容处理：检查 val 是不是我们新定义的带 statement 的字典/对象
+                if isinstance(val, dict) and "statement" in val:
+                    stmt = val.get("statement", "")
+                    s_ids = val.get("source_ids", [])
+                    block += f"  - {key}: {stmt} [Source IDs: {', '.join(s_ids)}]\n"
+                elif hasattr(val, "statement"):  # 如果直接是 Pydantic 对象未转 dict
+                    stmt = getattr(val, "statement", "")
+                    s_ids = getattr(val, "source_ids", [])
+                    block += f"  - {key}: {stmt} [Source IDs: {', '.join(s_ids)}]\n"
+                else:
+                    # 兜底：万一大模型只输出了字符串
+                    block += f"  - {key}: {val}\n"
 
         context_blocks.append(block)
 
@@ -1237,11 +1273,51 @@ def integrating_node(state: ResearchState) -> dict:
     }
     task_history.append(new_task_entry)
 
+    # ==========================================
+    # 构建本次分析的“情景记忆快照”
+    # ==========================================
+    current_trajectory = state.get("research_trajectory", [])
+    current_count = state.get("report_count", 0) + 1
+
+    # 极简提取子任务的“执行指纹”
+    subtask_fingerprints = []
+    for t_id, t_data in raw_results.items():
+        agent_type = t_data.get("agent_name", "").replace("_Agent", "")
+        target_phase = t_data.get("target_phase_name", "Global")
+
+        # 尝试提取这个探员分析的核心目标（根据不同探员的特性）
+        # 如果是 Deep Dive，它通常有 target_entity；如果是 Relation Miner，它有 focus_entities
+        focus = "Macro Situation"  # 默认是全局监控
+        if "target_entity" in t_data:
+            focus = f"Entity: {t_data['target_entity']}"
+        elif "focus_entities" in t_data and isinstance(t_data["focus_entities"], list):
+            focus = f"Relations: {', '.join(t_data['focus_entities'])}"
+
+        # 组装成一句话指纹，例如: "[Phase 1] Deep_Dive focused on Entity: TMC"
+        subtask_fingerprints.append(f"[{target_phase}] {agent_type} focused on {focus}")
+
+    # 提取精简版信息
+    snapshot = {
+        "round": current_count,
+        "user_query": state.get("research_topic", "未知查询"),
+        "report_title": final_report.get("report_title", "未命名报告"),
+        "executive_summary": final_report.get("executive_summary", "无摘要"),
+        # 只提取阶段的名字，不留冗长的文本
+        "phases_covered": [f"[{p.get("phase_time_range")}] | {p.get("phase_name")}" for p in phase_data_list],
+        "spatiotemporal_blueprint": blueprint["overall_narrative"],
+        "subtasks_executed": subtask_fingerprints
+    }
+
+    # 追加到历史轨迹中
+    current_trajectory.append(snapshot)
 
     return {
         "final_report": final_report,
         "analysis_results": integrated_payload,
         "current_phase": "ready",
         "messages": [{"role": "ai", "content": f"Report '{final_report.get('report_title')}' generated successfully."}],
-        "task_history": task_history
+        "task_history": task_history,
+        # 把记忆写回状态树
+        "report_count": current_count,
+        "research_trajectory": current_trajectory
     }

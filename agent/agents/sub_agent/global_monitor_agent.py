@@ -2,8 +2,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 
-from agent.agents.schemas import Claim
-from agent.config.llm_config import llm_qw_quick, llm_qw_thinking
+from agent.agents.schemas import Claim, StrategicInsights
+from agent.config.llm_config import llm_qw_quick, llm_qw_thinking, llm_thinking
 from agent.config.prompt_template import GLOBAL_MONITOR_PROMPT
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -35,25 +35,20 @@ class RidgelinePoint(BaseModel):
     count: int = Field(description="Number of articles for this topic on this date")
     source_ids: List[str] = Field(description="List of DOC_IDs published on this date for this topic. Like ['001']")
 
-# === 新增：释放大模型思考能力的洞察模型 ===
-class StrategicInsights(BaseModel):
-    core_conflict: str = Field(description="Highly analytical summary of the core geopolitical contradictions or friction points.")
-    hidden_intentions: str = Field(description="Deep analysis of the underlying strategic motives of the key actors involved, going beyond surface-level news.")
-    trend_prediction: str = Field(description="A forward-looking forecast of how this situation is likely to evolve in the short-to-medium term.")
 
 # === 修改：重构 GlobalMonitorOutput ===
 class GlobalMonitorOutput(BaseModel):
     # 1. 客观事实层（替代原来的 overview_claims）
     factual_grounding: List[Claim] = Field(description="Objective factual timeline and events extracted directly from the news. MUST be strictly traced to source_ids.")
     # 2. 主观洞察层（新加入的灵魂）
-    strategic_insights: StrategicInsights = Field(description="Deep, subjective analytical insights, hidden motives, and predictions. No source_ids required here.")
+    strategic_insights: StrategicInsights = Field(description="Deep, subjective analytical insights, hidden motives, and predictions. MUST be strictly traced to source_ids.")
     # 3. 可视化数据层（保持不变）
     topics: List[TopicNode] = Field(description="List of top 3-5 identified topics with their temporal patterns.")
     geo_data: List[GeoPoint] = Field(description="Data for rendering the dynamic map with time sliders.")
     ridgeline_data: List[RidgelinePoint] = Field(description="Data for rendering the Ridgeline Plot (daily counts per topic).")
 
 # 1. 初始化 LLM
-llm = llm_qw_thinking
+llm = llm_thinking
 
 # 2. 设置 Parser
 parser = JsonOutputParser(pydantic_object=GlobalMonitorOutput)

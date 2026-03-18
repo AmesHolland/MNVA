@@ -4,8 +4,8 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
 
-from agent.agents.schemas import Claim
-from agent.config.llm_config import llm_qw_thinking
+from agent.agents.schemas import Claim, StrategicInsights
+from agent.config.llm_config import llm_qw_thinking, llm_thinking
 from agent.config.prompt_template import RELATION_MINER_PROMPT
 
 
@@ -22,18 +22,13 @@ class RelationEdge(BaseModel):
     source_ids: List[str] = Field(
         description="List of exact DOC_IDs from the input text that describe this relationship. Like ['001']")
 
-# === 🌟 核心新增：网络层面的战略洞察 ===
-class NetworkStrategicInsights(BaseModel):
-    power_dynamics: str = Field(description="Analysis of who holds the leverage or central hub position in this network, and who is marginalized.")
-    alliance_vs_friction: str = Field(description="Deep dive into the underlying alliances forming or hidden frictions brewing beneath the surface interactions.")
-    network_evolution_forecast: str = Field(description="Prediction of how these relationships will shift (e.g., 'Bilateral tensions likely to draw in third-party actors like X').")
 
 # === 修改：双轨制输出 ===
 class RelationExtractionOutput(BaseModel):
     factual_grounding: List[Claim] = Field(description="Objective summary of the inter-entity dynamics broken down into traceable claims. MUST be traced to source_ids.")
-    strategic_insights: NetworkStrategicInsights = Field(description="Deep, subjective analysis of the network's power dynamics and future shifts. No source_ids required.")
+    strategic_insights: StrategicInsights = Field(description="Deep, subjective analysis of the network's power dynamics and future shifts. MUST be traced to source_ids.")
     relations: List[RelationEdge] = Field(description="List of extracted relationships.")
-llm = llm_qw_thinking
+llm = llm_thinking
 parser = JsonOutputParser(pydantic_object=RelationExtractionOutput)
 
 prompt = PromptTemplate(
