@@ -154,7 +154,25 @@ def simple_chat_node(state: ResearchState) -> dict:
     """快分支：处理基础问答、闲聊或简单解释"""
     print("\n" + "=" * 50 + "\n💬 进入轻量级问答分支 (Fast Track)...")
     topic = state["research_topic"]
-    
+
+    trajectory = state.get("research_trajectory", [])
+    report_count = state.get("report_count", 0)
+
+    memory_string = "No prior research history in this session."
+
+    if report_count > 0:
+        memory_string = f"You have completed {report_count} research rounds in this session.\n\n"
+        for item in trajectory:
+            memory_string += f"### Round {item['round']}\n"
+            memory_string += f"- User Query: {item['user_query']}\n"
+            memory_string += f"- Report Title Generated: {item['report_title']}\n"
+            memory_string += f"- Core Conclusion: {item['executive_summary']}\n"
+            memory_string += f"- Phases Analyzed: {', '.join(item['phases_covered'])}\n\n"
+            # 🌟 新增打印子任务执行记录
+            memory_string += f"- Sub-Agents Deployed:\n"
+            for task_fp in item.get('subtasks_executed', []):
+                memory_string += f"  * {task_fp}\n"
+            memory_string += "\n"
     # 获取历史消息
     history = state.get("messages", [])
     
@@ -166,7 +184,7 @@ def simple_chat_node(state: ResearchState) -> dict:
         elif isinstance(msg, AIMessage):
             prompt_messages.append(f"AI: {msg.content}")
     
-    prompt = f"你是一个海洋态势感知系统的智能助手。请根据以下对话历史，简明扼要地回答用户的最新问题。\n\n对话历史:\n{''.join(prompt_messages)}\n\n最新问题: {topic}"
+    prompt = f"你是一个海洋态势感知系统的智能助手。请根据以下对话历史，简明扼要地回答用户的最新问题。\n\n对话历史:\n{''.join(prompt_messages)}\n\n{memory_string}\n最新问题: {topic}"
     
     response = model_quick.invoke([HumanMessage(content=prompt)])
 

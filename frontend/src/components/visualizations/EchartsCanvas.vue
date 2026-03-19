@@ -533,14 +533,16 @@ const renderChart = async () => {
       ]
     });
   }
-
+  const legendData = [];
+  if (globalData.length > 0) legendData.push('Macro Context (Global)');
+  if (deepDiveData.length > 0) legendData.push('Micro Trajectory (Entity)');
   option = {
     // 【核心交互】：开启 ECharts 原生图例，用户点击图例就能隐藏/显示对应图层！
     legend: {
       show: true,
       top: 10,
       left: 'center',
-      data: ['Macro Context (Global)', 'Micro Trajectory (Entity)'],
+      data: legendData,
       textStyle: { fontWeight: 'bold' }
     },
     tooltip: { /* 根据 params.seriesName 做不同的 tooltip 渲染即可 */ },

@@ -4,7 +4,6 @@ import { useChatStore } from '../store/chatStore'
 
 // 引入左侧组件
 import ChatBox from '../components/chat/ChatBox.vue'
-// import ApprovalCard from '../components/chat/ApprovalCard.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
 import TraceableText from '../components/visualizations/TraceableText.vue'
 import EvidenceDrawer from '../components/visualizations/EvidenceDrawer.vue'
@@ -18,23 +17,61 @@ const store = useChatStore()
 // 核心状态：视图模式切换 ('split' 左右分栏模式 | 'narrative' 瀑布流模式)
 const viewMode = ref('split')
 // 在 Dashboard.vue 中
+// 🌟 1. 新增：记录当前激活的地图视角，默认为全局
+const activeMapTab = ref('global');
+
+// 🌟 2. 重构 unifiedMapData：收集全局数据和【多个】深度挖掘数据
 const unifiedMapData = computed(() => {
   let globalData = [];
-  let deepDiveData = [];
+  let deepDiveTasks = []; // 改为数组
 
   allUniqueTasks.value.forEach(task => {
     if (task.agent_name === 'Global_Monitor_Agent') {
       globalData = task.visualization_data.geo_dynamic_data || [];
     }
-    if (task.agent_name === 'Deep_Dive_Agent') {
-      deepDiveData = task.visualization_data.map_chart || [];
+    if (task.agent_name === 'Deep_Dive_Agent' && task.visualization_data.map_chart) {
+      // 收集每一个有地图数据的 Deep Dive 任务
+      deepDiveTasks.push({
+        task_id: task.task_id,
+        // 取 summary 的前几个字作为 Tab 标签，或者用 Agent 名称
+        title: task.summary ? task.summary.substring(0, 20) + '...' : `Entity Focus ${deepDiveTasks.length + 1}`,
+        data: task.visualization_data.map_chart
+      });
     }
   });
 
-  // 如果两者都没有，返回 null 不渲染地图
-  if (globalData.length === 0 && deepDiveData.length === 0) return null;
+  if (globalData.length === 0 && deepDiveTasks.length === 0) return null;
 
-  return { globalData, deepDiveData };
+  // 防御性逻辑：如果当前选中的 deep_dive 任务被清除了，重置回 global 视角
+  if (activeMapTab.value !== 'global' && !deepDiveTasks.find(t => t.task_id === activeMapTab.value)) {
+    activeMapTab.value = 'global';
+  }
+
+  return { globalData, deepDiveTasks };
+});
+
+// 🌟 3. 新增计算属性：动态计算传给 Echarts 的 chartType
+const currentUnifiedChartType = computed(() => {
+  return activeMapTab.value === 'global' ? 'global_map' : 'unified_map';
+});
+
+// 🌟 4. 新增计算属性：动态计算传给 Echarts 的 chartData
+// 🌟 Dashboard.vue 内部
+const currentUnifiedChartData = computed(() => {
+  if (!unifiedMapData.value) return null;
+
+  if (activeMapTab.value === 'global') {
+    // 全局视角：传原始 globalData，交给 global_map 渲染
+    return unifiedMapData.value.globalData;
+  } else {
+    // Focus 视角：交给 unified_map 渲染
+    const targetTask = unifiedMapData.value.deepDiveTasks.find(t => t.task_id === activeMapTab.value);
+
+    return {
+      globalData: [], // 👈 核心魔术：故意传空数组！这样背景就不会渲染那些蓝色的散点了
+      deepDiveData: targetTask ? targetTask.data : []
+    };
+  }
 });
 // 辅助方法：图表去重引擎
 // 无论哪种模式，我们都要确保图表不重复出现
@@ -334,7 +371,7 @@ const currentPhaseData = computed(() => {
   <!--      </header>-->
         <main class="chat-stream">
           <ChatBox />
-  <!--        <ApprovalCard class="hitl-card" />-->
+
         </main>
         <footer class="input-area">
           <ChatInput />
@@ -428,9 +465,38 @@ const currentPhaseData = computed(() => {
             <div class="split-chart-pane">
 
                 <div class="chart-box" style="grid-column: 1 / -1; " v-if="unifiedMapData">
-                  <div class="chart-header"> Spatiotemporal Unified Map</div>
+
+                  <div class="chart-header map-tabs-header">
+                    <span class="map-title">🌍 Spatiotemporal View</span>
+
+                    <div class="map-tabs">
+                      <button
+                        class="map-tab-btn"
+                        :class="{ active: activeMapTab === 'global' }"
+                        @click="activeMapTab = 'global'"
+                      >
+                        Macro Context
+                      </button>
+
+                      <button
+                        v-for="(dd, index) in unifiedMapData.deepDiveTasks"
+                        :key="dd.task_id"
+                        class="map-tab-btn"
+                        :class="{ active: activeMapTab === dd.task_id }"
+                        @click="activeMapTab = dd.task_id"
+                        :title="dd.title"
+                      >
+                        🎯 Focus {{ index + 1 }}
+                      </button>
+                    </div>
+                  </div>
+
                   <div class="chart-content">
-                    <EchartsCanvas chartType="unified_map" :chartData="unifiedMapData" />
+                    <EchartsCanvas
+                      :key="'map-' + activeMapTab"
+                      :chartType="currentUnifiedChartType"
+                      :chartData="currentUnifiedChartData"
+                    />
                   </div>
                 </div>
 
@@ -1326,5 +1392,56 @@ const currentPhaseData = computed(() => {
   background-color: #e6a23c;
   color: #ffffff;
   box-shadow: 0 2px 4px rgba(230, 162, 60, 0.3);
+}
+/* --- 地图专属选项卡 Header --- */
+.map-tabs-header {
+  display: flex;
+  align-items: center;
+  padding-bottom: 12px;
+  /* 去掉 justify-content，交由子元素分配空间 */
+}
+
+.map-title {
+  flex: 1; /* 🌟 核心 1：让标题占据左侧所有剩余空间 */
+  font-weight: 600;
+  color: #303133;
+}
+
+.map-tabs {
+  display: flex;
+  gap: 6px;
+  background: #f0f2f5;
+  padding: 4px;
+  border-radius: 6px;
+  /* Tabs 自身保持内容宽度，不设置 flex: 1 */
+}
+
+/* 🌟 核心 2：在右侧生成一个隐形的占位块，分配与标题相等的空间 */
+.map-tabs-header::after {
+  content: '';
+  flex: 1;
+}
+
+.map-tab-btn {
+  background: transparent;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #606266;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.map-tab-btn:hover {
+  color: #409EFF;
+}
+
+.map-tab-btn.active {
+  background: #ffffff;
+  color: #409EFF;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+  font-weight: bold;
 }
 </style>
