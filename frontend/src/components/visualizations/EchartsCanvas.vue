@@ -195,6 +195,11 @@ const renderChart = async () => {
     // --- 公共的 Tooltip 配置 ---
     const commonTooltip = {
       trigger: 'item',
+      // 🌟 核心修复 1：将 DOM 挂载到根节点，彻底脱离父级盒模型的束缚
+  appendToBody: true,
+
+  // 🌟 核心修复 2：注入最高级别的 z-index，顺便加个高级的阴影让它浮于表面
+  extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2);',
       formatter: (params) => {
         // [lon, lat, intensity, topic, summary, source_ids, date]
         const [lon, lat, intensity, topic, summary, source_ids, date] = params.value;
