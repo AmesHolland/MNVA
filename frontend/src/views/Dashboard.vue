@@ -201,7 +201,64 @@ const currentPhaseData = computed(() => {
   if (!store.analysisResults?.phase_data_list) return null
   return store.analysisResults.phase_data_list.find(p => p.phase_index === activeTab.value)
 })
+import { nextTick } from 'vue' // 确保引入 nextTick
+import html2pdf from 'html2pdf.js' // 🌟 引入 PDF 导出库
+// ... (保留你原有的其他 import)
 
+// ... (保留你原有的状态定义)
+
+// 🌟 新增：导出 PDF 相关的状态
+const isExporting = ref(false)
+
+// 🌟 新增：核心导出函数
+const exportToPDF = async () => {
+  // 1. 防御性检查：确保报告已经生成
+  if (!store.analysisResults?.report) {
+    alert("Please generate a report first before exporting.")
+    return
+  }
+
+  isExporting.value = true
+
+  // 2. 智能视图切换：如果用户没在 Final Report 视图，自动切过去
+  if (activeTab.value !== 'final_report') {
+    activeTab.value = 'final_report'
+    // 等待 Vue 将 DOM 切换过来
+    await nextTick()
+    // 故意等待 800ms，让 ECharts 的入场动画彻底播完，防止截到半截的图表
+    await new Promise(resolve => setTimeout(resolve, 800))
+  }
+
+  // 3. 获取我们要导出的目标 DOM 节点
+  const element = document.querySelector('.split-text-pane')
+  if (!element) {
+    alert("Report container not found.")
+    isExporting.value = false
+    return
+  }
+
+  // 4. 动态获取报告标题作为文件名
+  const fileName = `${store.analysisResults.report.report_title || 'Marine_News_Analysis'}.pdf`
+
+  // 5. 配置 html2pdf 参数 (A4 纸张，高清渲染)
+  const opt = {
+    margin:       [15, 15, 15, 15], // 上, 左, 下, 右 的边距 (mm)
+    filename:     fileName,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true }, // scale: 2 保证 ECharts 截图清晰不模糊
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  }
+
+  // 6. 执行导出
+  try {
+    await html2pdf().set(opt).from(element).save()
+  } catch (error) {
+    console.error("PDF Export Failed:", error)
+    alert("Export failed, please check console.")
+  } finally {
+    isExporting.value = false
+  }
+}
 </script>
 
 <template>
@@ -226,7 +283,10 @@ const currentPhaseData = computed(() => {
       </div>
 
       <div class="global-actions" v-if="store.analysisResults?.report">
-
+        <button class="export-pdf-btn" @click="exportToPDF" :disabled="isExporting">
+           <span class="icon">{{ isExporting ? '⏳' : '📥' }}</span>
+           {{ isExporting ? 'Generating PDF...' : 'Export Report' }}
+        </button>
         <div class="phase-stepper-container">
       <div class="phase-stepper">
         <template v-for="(phase, index) in store.analysisResults.phase_data_list" :key="'step-'+phase.phase_index">
@@ -446,9 +506,7 @@ const currentPhaseData = computed(() => {
             <div v-if="viewMode === 'split'" class="split-layout">
 
             <div class="split-text-pane">
-  <!--            <div class="executive-summary-card">-->
-  <!--              <strong>Abstract：</strong>{{ store.analysisResults.report.executive_summary }}-->
-  <!--            </div>-->
+                <strong style="font-size: 30px;padding-bottom: 10px">{{ store.analysisResults.report.report_title }}</strong>
             <article v-for="(section, index) in store.analysisResults.report.sections" :key="'text-'+index" class="text-section">
               <h2 class="section-subtitle">{{ index + 1 }}. {{ section.section_title }}</h2>
 
@@ -1443,5 +1501,36 @@ const currentPhaseData = computed(() => {
   color: #409EFF;
   box-shadow: 0 2px 6px rgba(0,0,0,0.06);
   font-weight: bold;
+}
+.export-pdf-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+  color: #303133;
+  border: 1px solid #dcdfe6;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  margin-right: 12px; /* 和右侧的历史记录拉开一点距离 */
+}
+
+.export-pdf-btn:hover:not(:disabled) {
+  background: #fff;
+  border-color: #409EFF;
+  color: #409EFF;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.2);
+}
+
+.export-pdf-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background: #f5f7fa;
+  color: #909399;
 }
 </style>

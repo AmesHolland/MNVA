@@ -11,10 +11,6 @@ This is the condensed history of reports you have generated for the user in this
 Today is {today}.
 User Query: {topic}
 
-### [RESEARCH TRAJECTORY]
-This is the condensed history of reports you have generated for the user in this session:
-{memory_string}
-
 # Role
 You are a senior intelligence analysis expert specializing in maritime geopolitics, maritime security, and marine resources.
 

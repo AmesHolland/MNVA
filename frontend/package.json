@@ -12,6 +12,7 @@
     "@microsoft/fetch-event-source": "^2.0.1",
     "axios": "^1.13.5",
     "echarts": "^6.0.0",
+    "html2pdf.js": "^0.14.0",
     "pinia": "^3.0.4",
     "vega": "^6.2.0",
     "vega-embed": "^7.1.0",
