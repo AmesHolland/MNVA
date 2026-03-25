@@ -5,6 +5,32 @@
         "original_filename": "enriched_news.json",
         "upload_time": "2026-03-16 21:59:34",
         "row_count": 182,
-        "file_path": "D:\\ProgramFiles\\Project\\Python\\MNVA\\agent\\tools\\data_warehouse\\ds_55b4c3b2.json"
+        "file_path": ".\\ds_55b4c3b2.json"
+    },
+    {
+        "dataset_id": "ds_f14d9f22",
+        "dataset_name": "BBNJ-news",
+        "upload_time": "2026-03-25 00:26:24",
+        "row_count": 149,
+        "file_path": "C:\\Users\\win11\\Desktop\\MNVA\\agent\\tools\\data_warehouse\\ds_f14d9f22.json",
+        "entity_list_path": "C:\\Users\\win11\\Desktop\\MNVA\\agent\\tools\\data_warehouse\\ds_f14d9f22_entities.json",
+        "has_normalized": true
+    },
+    {
+        "dataset_id": "ds_ed1390bc",
+        "dataset_name": "deep_sea_mining_news",
+        "upload_time": "2026-03-25 00:54:42",
+        "row_count": 182,
+        "file_path": "C:\\Users\\win11\\Desktop\\MNVA\\agent\\tools\\data_warehouse\\ds_ed1390bc.json",
+        "entity_list_path": "C:\\Users\\win11\\Desktop\\MNVA\\agent\\tools\\data_warehouse\\ds_ed1390bc_entities.json",
+        "has_normalized": true
+    },
+    {
+        "dataset_id": "ds_875ff104",
+        "dataset_name": "deep_sea_mining_news",
+        "upload_time": "2026-03-25 10:02:10",
+        "row_count": 182,
+        "file_path": "C:\\Users\\win11\\Desktop\\MNVA\\agent\\tools\\data_warehouse\\ds_875ff104.json",
+        "has_normalized": true
     }
 ]

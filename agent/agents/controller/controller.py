@@ -127,98 +127,187 @@ class ResearchState(TypedDict):
     user_feedback: str
     # 其他你原有的状态，如搜集到的数据、分析结果等
     analysis_results: Dict[str, Any]
+    
+    # 新增字段
+    dataset_id: str 
+    spatiotemporal_blueprint: dict
+    output_language: str
+    research_trajectory: list
+    report_count: int
+    
 
-def run_research_hitl(topic: str):
-    """运行带有 Human-in-the-Loop (HITL) 审批机制的研究任务"""
+from langchain_core.messages import HumanMessage
+from agent.tools.data_manager import process_uploaded_file, load_registry, load_dataset
+
+
+import os
+import json
+from datetime import datetime
+from langchain_core.messages import HumanMessage
+
+# 确保从你的 data_manager 模块导入核心函数
+from agent.tools.data_manager import process_uploaded_file, load_registry, get_dataset_entities
+
+def run_research_hitl(topic: str, file_path: str = None, dataset_id: str = None):
+    """
+    运行带有数据集接入、受控词表注入与审批机制的研究任务 (完整增强版)
+    :param topic: 研究主题
+    :param file_path: 可选，原始数据文件路径 (CSV/Excel/JSON)
+    :param dataset_id: 可选，直接指定已有的数据集 ID
+    """
     print("\n" + "=" * 60)
-    print("🔬 启动多Agent可视分析系统 (CLI 测试版)")
+    print("🔬 启动多Agent可视分析系统 (Controlled Vocabulary Version)")
     print("=" * 60)
     print(f"研究主题: {topic}")
     print(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # 1. 创建研究助手 (注意：内部必须 compile(checkpointer=memory, interrupt_before=["check"]))
+    # --- 1. 动态数据集路由 (Dynamic Dataset Routing) ---
+    target_ds = "default_pool"
+    
+    # 模式 A: 重新加工新文件
+    if file_path and os.path.exists(file_path):
+        print(f"\n🧬 [数据入库] 检测到新源文件: {os.path.basename(file_path)}")
+        print("🧠 正在解析时空蓝图，执行实体归一化重构...")
+        res = process_uploaded_file(file_path, os.path.basename(file_path))
+        if res and "success" in res:
+            target_ds = res["dataset"]["dataset_id"]
+            print(f"✅ 归一化加工完成！分配 ID: {target_ds} ({res['dataset']['row_count']} 条记录)")
+        else:
+            print(f"❌ 加工失败: {res.get('error') if res else '未知错误'}，降级使用默认池。")
+            
+    # 模式 B: 指定已有数据集
+    elif dataset_id:
+        print(f"\n📦 [指定挂载] 正在链接数据集仓库: {dataset_id}")
+        target_ds = dataset_id
+        
+    # 模式 C: 自动兼容模式 (寻找最近一次成功加工的数据)
+    else:
+        registry = load_registry()
+        if registry:
+            target_ds = registry[-1]["dataset_id"]
+            print(f"\n💡 [自动兼容] 未指定文件，已自动挂载最新证据库: {target_ds}")
+        else:
+            print("\n⚠️ [兜底模式] 未找到历史数据集，将搜索默认数据池。")
+
+    # --- 2. 核心：提取受控词表 (Controlled Vocabulary) ---
+    # 从加工好的数据集中提取“标准实体名录”，用于强力约束 Planner
+    print(f"📒 [受控词表] 正在从数据集 {target_ds} 提取标准实体名录...")
+    try:
+        canonical_entities = get_dataset_entities(target_ds)
+        print(f"✅ 已加载 {len(canonical_entities)} 个标准实体，准备注入规划指令。")
+    except Exception as e:
+        print(f"⚠️ 实体名录提取失败: {e}，将使用自由检索模式。")
+        canonical_entities = []
+
+    # --- 3. 初始化助手与状态 ---
+    # 这里的 assistant 对应你构建好的 LangGraph 图对象
+    from agent.agents.controller.controller import create_visual_analytics_assistant
     assistant = create_visual_analytics_assistant()
 
-    # 2. 初始状态
+    # 构造初始指令：重点在于注入“受控词表”约束，防止 Planner 生成不存在的实体
+    entity_constraint = ""
+    if canonical_entities:
+        # 限制列表长度，防止 Prompt 过长，如有需要可全量注入
+        display_entities = canonical_entities[:200] 
+        entity_constraint = f"\n\n【重要检索约束：受控词表】\n当前证据库中仅存在以下标准实体。在调用 retrieve_news 填写 entities 参数时，必须且只能使用此列表中的词汇。如果想搜索列表之外的内容，请将其放入 keywords 字段：\n{json.dumps(display_entities, ensure_ascii=False)}"
+
     initial_state = {
-        "messages": [HumanMessage(content=f"请对以下主题进行深入研究：{topic}")],
+        "messages": [HumanMessage(content=f"请对以下主题进行深入研究：{topic}{entity_constraint}")],
         "research_topic": topic,
+        "query": topic,
+        "output_language": "zh",
+        "dataset_id": target_ds,  # 确保所有 Agent 共享同一个数据集上下文
+        "canonical_entities": canonical_entities,
+        
+        # 初始化其他状态字段
         "research_questions": [],
-        "intent": [],
-        "plan": {},  # 等待 planner 填充
-        "user_feedback": "",  # 新增：用于接收 CLI 输入的反馈
+        "intent": {}, 
+        "plan": {}, 
+        "current_plan": {},
+        "user_feedback": "", 
+        "current_phase": "planning",
+        "iteration_count": 0,
+        "news_list": [],
         "findings": [],
         "task_results": {},
+        "analysis_results": {},
         "final_report": "",
         "draft_sections": {},
-        "current_phase": "",
-        "iteration_count": 0,
-        "research_list": []
+        "research_list": [],
+        "citations": [],
+        "research_trajectory": [],
+        "report_count": 0,
+        "spatiotemporal_blueprint": {}
     }
 
-    # 3. 配置 thread_id，这对记忆保存和恢复至关重要
+    # 4. 配置 thread_id 用于持久化记忆
     config = {"configurable": {"thread_id": f"research_{datetime.now().strftime('%Y%m%d%H%M%S')}"}}
 
-    print("\n🚀 [系统] 正在进行意图识别与任务编排 (Planning)...")
+    print("\n🚀 [Planner] 正在结合受控词表进行任务规划...")
 
-    # 4. 首次启动图：它会运行到 interrupt_before 指定的节点（如 "check"）然后暂停
+    # 5. 首次执行：进入规划阶段
     assistant.invoke(initial_state, config)
 
-    # 5. 进入交互循环（模拟前后端多次握手）
+    # 6. 交互循环 (Human-In-The-Loop)
     while True:
-        # 获取当前图的状态快照
         state_snapshot = assistant.get_state(config)
 
-        # 检查图是否已经执行完毕 (没有 next node 说明跑到了 END)
+        # 如果没有下一个节点，说明流程结束
         if not state_snapshot.next:
             print("\n✅ [系统] 分析与整合流程已全部完成！")
             break
 
-        # 如果图暂停在了 check 节点前
-        if "check" in state_snapshot.next:
-            # 读取 Planner 刚刚生成的计划
-            current_plan = state_snapshot.values.get("plan", "暂无计划内容")
-
+        # 检查是否处于审批环节
+        # 注意：这里的条件根据你的图节点名称（如 'planner_check'）进行微调
+        if any("check" in n for n in state_snapshot.next):
+            plan_data = state_snapshot.values.get("plan", {})
+            
             print("\n" + "=" * 60)
-            print("⏸️ [审批节点] 系统需要您的确认才能继续执行")
+            print("⏸️ [审批节点] 请审核动态生成的分析计划 (受控词表模式)")
             print("=" * 60)
-            print(f"当前生成的调用计划 (Plan): \n{current_plan}")
+            
+            if isinstance(plan_data, dict) and "total_plan_logic" in plan_data:
+                print(f"📡 规划逻辑: {plan_data['total_plan_logic']}")
+                print(f"🤖 拟调用 Agent 数量: {len(plan_data.get('tasks', []))}")
+                # 展示拟检索的实体，供用户核对是否在清单内
+                for i, task in enumerate(plan_data.get('tasks', [])):
+                    args = task.get('args', {})
+                    if 'entities' in args:
+                        print(f"   └─ 任务 {i+1} 拟检索实体: {args['entities']}")
+            else:
+                print(f"📋 计划详情: \n{plan_data}")
+            
             print("-" * 60)
-
-            # 使用 input 模拟前端 Vue 的对话框输入
-            user_input = input("💡 请审核计划 (输入 'y' 确认执行，或输入修改意见让AI重做): ").strip()
-            current_phase = "analyzing"
-            # 逻辑判断：确认还是打回
-            if user_input.lower() in ['y', 'yes', 'ok', '同意', '确认']:
+            user_input = input("💡 输入 'y' 确认执行，或输入修改建议: ").strip()
+            
+            if user_input.lower() in ['y', 'yes', 'ok', '同意']:
                 feedback = "approve"
-                print("\n▶️ [系统] 您已批准计划。正在调用各个 Agent 进行数据检索与可视化生成...")
+                curr_phase = "analyzing"
+                print("\n▶️ [系统] 计划获批。正在并发调度数据路由...")
             else:
                 feedback = user_input
-                current_phase = "planning"
-                print(f"\n🔄 [系统] 收到您的修改意见：'{feedback}'。正在让 Planner 重新规划...")
+                curr_phase = "planning"
+                print(f"\n🔄 [系统] 收到调整建议。正在重新对齐蓝图...")
 
-            # 6. 核心步骤：将用户的意见注入到图的状态中
-            # 注意：如果你的 state 里定义的键名不是 user_feedback，请与你的 StateDict 保持一致
-            assistant.update_state(config, {"user_feedback": feedback , "current_phase": current_phase})
-
-            # 7. 唤醒图继续执行。传入 None 表示使用已更新的 state 继续向下走
+            # 更新状态并继续执行
+            assistant.update_state(config, {"user_feedback": feedback, "current_phase": curr_phase})
             assistant.invoke(None, config)
-
         else:
-            # 容错：如果停在了预料之外的节点，直接尝试继续往下跑
-            print(f"\n⚠️ [系统] 图暂停在了非审批节点: {state_snapshot.next}，尝试自动继续...")
+            # 自动执行非交互节点
             assistant.invoke(None, config)
 
-    # 8. 循环结束，输出最终结果
-    final_state = assistant.get_state(config).values
+    # 7. 结果展示
+    final_values = assistant.get_state(config).values
     print("\n" + "=" * 60)
-    print("📄 最终可视化方案与分析报告")
+    print("📄 最终分析报告 (基于全量归一化证据链)")
     print("=" * 60)
-    print(final_state.get("final_report", "报告生成失败"))
-
-    return final_state
+    print(final_values.get("final_report", "未生成内容。"))
+    
+    return final_values
 
 
 if __name__ == '__main__':
     topic = "对2025年第四季度美国在深海采矿方面采取的一系列行动"
-    run_research_hitl(topic)
+    data_path = r"C:\\Users\\win11\\Desktop\\MNVA\\agent\\tools\\deep_sea_mining_news.json"
+    run_research_hitl(topic, file_path=data_path)
+    
