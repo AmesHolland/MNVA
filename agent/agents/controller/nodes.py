@@ -1260,6 +1260,9 @@ def integrating_node(state: ResearchState) -> dict:
                     # 🌟 提取可视化数据
                     "visualization_data": task_data.get("visualization_data", {})
                 })
+                if task_data.get("agent_name") == "Global_Monitor_Agent":
+                    print("Global_Monitor_Agent Visualization")
+                    print(task_data.get("visualization_data"))
 
         # 将组装好的血肉填入阶段骨架
         phase_data_list.append({

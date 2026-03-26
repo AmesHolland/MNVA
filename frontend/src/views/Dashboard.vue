@@ -267,7 +267,7 @@ const exportToPDF = async () => {
     <header class="global-top-bar">
       <div class="brand-area" style="display: flex; align-items: center; gap: 40px;">
         <div class="brand">
-          <span class="sys-name">Marine News</span>
+          <span class="sys-name">EventHub</span>
           <span class="sys-subname">Multi-Agent Visual Analytics</span>
         </div>
         <div class="dataset-manager">
@@ -369,7 +369,7 @@ const exportToPDF = async () => {
                           <span class="node-type">Task {{ index + 1 }}</span>
                         </div>
                         <div class="sub-node-right">
-                          <span class="node-content">{{ subTask.agent_name.replace('_Agent', '') }}</span>
+                          <span class="node-content">{{ subTask?.agent_name ? subTask.agent_name.slice(0, -6) : '' }}</span>
                           <span class="icon-chart">📊</span>
                         </div>
                         <div class="progress-bar blue-bar"></div>
@@ -549,7 +549,7 @@ const exportToPDF = async () => {
                     </div>
                   </div>
 
-                  <div class="chart-content">
+                  <div class="chart-content" style="height: 400px;">
                     <EchartsCanvas
                       :key="'map-' + activeMapTab"
                       :chartType="currentUnifiedChartType"
@@ -732,7 +732,7 @@ const exportToPDF = async () => {
 
 .text-section { margin-bottom: 10px; }
 .section-subtitle { font-size: 1.3rem; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px; font-weight: 600; }
-.section-content p { font-size: 2rem; line-height: 1.8; color: #475569; margin-bottom: 1em; text-align: justify; }
+.section-content p { font-size: 20px; line-height: 0.5; color: #475569; margin-bottom: 1em; text-align: justify; }
 .conclusion-box { background: #ffffff; padding: 20px; border-radius: 6px; color: #475569; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; margin-top: 40px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
 .conclusion-box h3 { color: #334155; margin-top: 0; }
 
@@ -1428,7 +1428,7 @@ const exportToPDF = async () => {
 .insight-list { padding-left: 16px; }
 .insight-list li { color: #2a5caa; }
 
-.citation-badge { color: #409EFF; cursor: pointer; font-size: 11px; margin-left: 4px; font-weight: bold; }
+.citation-badge { color: rgb(209, 218, 220); cursor: pointer; font-size: 11px; margin-top: 5px;font-weight: bold; }
 
 /* ================= 右侧：图表占位符 ================= */
 .empty-chart-placeholder {

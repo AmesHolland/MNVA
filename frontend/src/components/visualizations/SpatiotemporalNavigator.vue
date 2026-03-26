@@ -94,7 +94,11 @@ const renderTimeline = () => {
   // 2. 处理 Anchor 蓝图数据
   const blueprint = store.analysisResults?.spatiotemporal_blueprint
   const markAreaRegions = []
-  const phaseColors = ['rgba(103, 194, 58, 0.5)', 'rgba(230, 162, 60, 0.5)', 'rgba(245, 108, 108, 0.5)']
+  const phaseColors = [
+    'rgba(214, 218, 222, 0.8)',  // 1. Grounding（浅灰绿调，对应最左侧阶段）
+    'rgba(192, 206, 207, 0.8)',  // 2. Planning（浅青灰调，对应中间阶段）
+    'rgba(166, 183, 191, 0.8)'   // 3. Executing（浅蓝灰调，对应最右侧阶段）
+  ]
 
   if (blueprint && blueprint.phases) {
 
@@ -110,7 +114,7 @@ const renderTimeline = () => {
 
       markAreaRegions.push([  // 【注意】：这里是一个数组包裹着两个对象
         {
-          name: `Phase ${phase.phase_id}: ${phase.phase_name}`,
+          name: `Stage ${phase.phase_id}: ${phase.phase_name}`,
           itemStyle: { color: phaseColors[index % phaseColors.length] },
           label: { position: 'insideTop', color: '#606266', fontWeight: 'bold' },
           xAxis: startDate.getTime() // 第一个对象：区域的起点
@@ -155,7 +159,7 @@ const renderTimeline = () => {
     ],
     series: [
       {
-        name: '历史新闻底噪',
+        name: 'News Count',
         type: 'bar',
         barWidth: 2,
         itemStyle: { color: '#dcdfe6' },

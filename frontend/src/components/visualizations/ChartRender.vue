@@ -35,12 +35,12 @@ const toggleFullscreen = () => {
 
 
 
-    <div class="chart-box" >
-      <div class="chart-header"> Topic Evolution Ridgeline</div>
-      <div class="chart-content">
-        <VegaLiteChart chartType="theme_river" :chartData="task.visualization_data.ridgeline_data" />
-      </div>
-    </div>
+<!--    <div class="chart-box" >-->
+<!--      <div class="chart-header"> Topic Evolution Ridgeline</div>-->
+<!--      <div class="chart-content">-->
+<!--        <VegaLiteChart chartType="theme_river" :chartData="task.visualization_data.ridgeline_data" />-->
+<!--      </div>-->
+<!--    </div>-->
   </template>
 
   <template v-if="task.agent_name === 'Deep_Dive_Agent'">
@@ -51,12 +51,12 @@ const toggleFullscreen = () => {
 <!--      </div>-->
 <!--    </div>-->
 
-    <div class="chart-box">
-      <div class="chart-header">Domain Behavior Timeline</div>
-      <div class="chart-content" >
-        <VegaLiteChart chartType="gantt_chart" :chartData="task.visualization_data.gantt_chart" />
-      </div>
-    </div>
+<!--    <div class="chart-box">-->
+<!--      <div class="chart-header">Domain Behavior Timeline</div>-->
+<!--      <div class="chart-content" >-->
+<!--        <VegaLiteChart chartType="gantt_chart" :chartData="task.visualization_data.gantt_chart" />-->
+<!--      </div>-->
+<!--    </div>-->
   </template>
 
   <template v-if="task.agent_name === 'Relation_Miner_Agent'">
@@ -91,6 +91,7 @@ const toggleFullscreen = () => {
   padding: 16px;
   display: flex;
   flex-direction: column;
+  height: 500px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.03);
   transition: box-shadow 0.3s ease, transform 0.3s ease;
 }

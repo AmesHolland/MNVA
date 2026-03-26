@@ -120,29 +120,6 @@ class TaskNode(BaseModel):
         description="IDs of prerequisite tasks whose structured outputs are required"
     )
 
-    # @model_validator(mode="after")
-    # def validate_task(self):
-    #     if self.task_id in self.dependency:
-    #         raise ValueError("A task cannot depend on itself.")
-    #
-    #     if self.agent == "Global_Monitor_Agent":
-    #         if "query" not in self.args:
-    #             raise ValueError("Global_Monitor_Agent requires args.query")
-    #
-    #     elif self.agent == "Deep_Dive_Agent":
-    #         if "target_entity" not in self.args:
-    #             raise ValueError("Deep_Dive_Agent requires args.target_entity")
-    #
-    #     elif self.agent == "Relation_Miner_Agent":
-    #         focus_entities = self.args.get("focus_entities")
-    #         if not isinstance(focus_entities, list) or len(focus_entities) < 2:
-    #             raise ValueError("Relation_Miner_Agent requires args.focus_entities with at least 2 entities")
-    #
-    #     if not self.target_phase_ids:
-    #         raise ValueError("Every task must include non-empty target_phase_ids")
-    #
-    #     return self
-
 
 class ExecutionPlan(BaseModel):
     total_plan_logic: str = Field(

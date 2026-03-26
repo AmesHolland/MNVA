@@ -164,7 +164,6 @@ Intent recognition result:
 # Runtime Fact (CRITICAL)
 All relevant news records, metadata skeletons, and profiling information have already been prepared by upstream nodes and stored in shared state.
 You MUST NOT create any retrieval, search, or prefetch task.
-In particular, DO NOT create Search_Agent / Retrieval_Agent / Basic Retrieval tasks.
 
 Every analysis task will directly read the shared news dataset and the assigned phase slices from the backend runtime.
 

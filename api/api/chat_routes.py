@@ -141,7 +141,7 @@ def chat():
             "iteration_count": 0,
             "research_list": [],
             "dataset_id": dataset_id,
-            "output_language": "Simplified Chinese", # 或 "English", "Japanese"
+            "output_language": "English", # 或 "English", "Japanese", 'Simplified Chinese'
             "task_history": [] # 初始化任务历史
         }
         inputs = initial_state

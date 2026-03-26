@@ -68,28 +68,39 @@ llm_qw_thinking = ChatOpenAI(
     )
 
 # 快速模型 - Haiku 4.5，速度快，适合简单任务
-llm_claude_quick = ChatOpenAI(
+llm_claude_quick = ChatAnthropic(
     base_url=ANTHROPIC_BASE_URL,
     api_key=ANTHROPIC_API_KEY,
-    model="gemini-3.1-fast",
+    model="claude-haiku-4-5-20251001", #"gemini-3.1-fast",
     temperature=0.3,
     max_retries=3,
 )
 
 # 思考模型 - Sonnet 4.5，开启 extended thinking，适合复杂推理
-llm_claude_thinking = ChatOpenAI(
-    api_key=ANTHROPIC_API_KEY,
-    base_url=ANTHROPIC_BASE_URL,
-    model="gemini-3.1-pro",
-    temperature=0.7,  # 开启 thinking 时，temperature 必须设为 1
-    max_retries=3,
-    # model_kwargs={
-    #     "thinking": {
-    #         "type": "enabled",
-    #     }
-    # },
-)
+# llm_claude_thinking = ChatOpenAI(
+#     api_key=ANTHROPIC_API_KEY,
+#     base_url=ANTHROPIC_BASE_URL,
+#     model="claude-sonnet-4-6", #"gemini-3.1-pro",
+#     temperature=0.7,  # 开启 thinking 时，temperature 必须设为 1
+#     max_retries=3,
+#     # model_kwargs={
+#     #     "thinking": {
+#     #         "type": "enabled",
+#     #     }
+#     # },
+# )
 
+
+# 方式二：自适应思考（推荐，让模型自己决定是否思考、思考多少）
+llm_claude_thinking = ChatAnthropic(
+    api_key=ANTHROPIC_API_KEY,
+    model="claude-sonnet-4-6",
+    max_tokens=16000,
+    max_retries=3,
+    thinking={
+        "type": "adaptive",
+    },
+)
 
 llm_ds = ChatOpenAI(
         api_key=DEEPSEEK_API_KEY,  # 硅基流动API Key

@@ -94,7 +94,7 @@ const isClaimDimmed = (claim) => {
 <style scoped>
 .traceable-paragraph {
   font-size: 14.5px;
-  line-height: 1.85; /* 增加行高，提升大段文字的阅读舒适度 */
+  line-height: 1.6; /* 增加行高，提升大段文字的阅读舒适度 */
   color: #333;
   text-align: justify; /* 两端对齐，报告显得更严谨 */
   margin-bottom: 12px;

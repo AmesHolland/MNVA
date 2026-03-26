@@ -6,3 +6,5 @@
 frontend/.vite
 AGENTS.md
 .gitignore
+tmp
+agent/tools/data_warehouse/
