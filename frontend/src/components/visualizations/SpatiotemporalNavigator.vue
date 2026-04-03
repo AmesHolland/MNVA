@@ -83,9 +83,9 @@ const renderTimeline = () => {
 
   // 1. 生成 mock 背景数据（统一用时间戳）
   const mockBackgroundData = []
-  let baseDate = new Date('2022-01-01').getTime()
+  let baseDate = new Date('2018-01-01').getTime()
   const oneDay = 24 * 3600 * 1000
-  for (let i = 0; i < 365 * 5; i++) {
+  for (let i = 0; i < 365 * 10; i++) {
     const currentTime = baseDate + i * oneDay
     const volume = Math.max(10, Math.floor(Math.random() * 50) + (i % 100 === 0 ? 200 : 0))
     mockBackgroundData.push([currentTime, volume])
@@ -114,7 +114,7 @@ const renderTimeline = () => {
 
       markAreaRegions.push([  // 【注意】：这里是一个数组包裹着两个对象
         {
-          name: `Stage ${phase.phase_id}: ${phase.phase_name}`,
+          name: `Phase ${phase.phase_id}: ${phase.phase_name}`,
           itemStyle: { color: phaseColors[index % phaseColors.length] },
           label: { position: 'insideTop', color: '#606266', fontWeight: 'bold' },
           xAxis: startDate.getTime() // 第一个对象：区域的起点

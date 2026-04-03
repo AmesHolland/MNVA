@@ -13,7 +13,7 @@ import SpatiotemporalNavigator from "../components/visualizations/Spatiotemporal
 import EchartsCanvas from "../components/visualizations/EchartsCanvas.vue";
 
 const store = useChatStore()
-
+import { exportStructuredReport } from '../utils/reportExporter'
 // 核心状态：视图模式切换 ('split' 左右分栏模式 | 'narrative' 瀑布流模式)
 const viewMode = ref('split')
 // 在 Dashboard.vue 中
@@ -25,15 +25,18 @@ const unifiedMapData = computed(() => {
   let globalData = [];
   let deepDiveTasks = []; // 改为数组
 
-  allUniqueTasks.value.forEach(task => {
+  // 假设 allUniqueTasks.value 是你的 tasks 对象
+  Object.entries(allUniqueTasks.value).forEach(([taskKey, task]) => {
+    // taskKey 就是你要的 key，比如 "deep_dive_isa_governance"
+    // task 是原来的任务对象
+
     if (task.agent_name === 'Global_Monitor_Agent') {
       globalData = task.visualization_data.geo_dynamic_data || [];
     }
     if (task.agent_name === 'Deep_Dive_Agent' && task.visualization_data.map_chart) {
-      // 收集每一个有地图数据的 Deep Dive 任务
       deepDiveTasks.push({
+        task_name: taskKey, // 直接用 key 作为任务名
         task_id: task.task_id,
-        // 取 summary 的前几个字作为 Tab 标签，或者用 Agent 名称
         title: task.summary ? task.summary.substring(0, 20) + '...' : `Entity Focus ${deepDiveTasks.length + 1}`,
         data: task.visualization_data.map_chart
       });
@@ -202,61 +205,82 @@ const currentPhaseData = computed(() => {
   return store.analysisResults.phase_data_list.find(p => p.phase_index === activeTab.value)
 })
 import { nextTick } from 'vue' // 确保引入 nextTick
-import html2pdf from 'html2pdf.js' // 🌟 引入 PDF 导出库
 // ... (保留你原有的其他 import)
 
 // ... (保留你原有的状态定义)
 
 // 🌟 新增：导出 PDF 相关的状态
 const isExporting = ref(false)
-
+const exportStatus = ref('')   // 新增：用于展示导出进度文案
 // 🌟 新增：核心导出函数
+// const exportToPDF = async () => {
+//   // 1. 防御性检查：确保报告已经生成
+//   if (!store.analysisResults?.report) {
+//     alert("Please generate a report first before exporting.")
+//     return
+//   }
+//
+//   isExporting.value = true
+//
+//   // 2. 智能视图切换：如果用户没在 Final Report 视图，自动切过去
+//   if (activeTab.value !== 'final_report') {
+//     activeTab.value = 'final_report'
+//     // 等待 Vue 将 DOM 切换过来
+//     await nextTick()
+//     // 故意等待 800ms，让 ECharts 的入场动画彻底播完，防止截到半截的图表
+//     await new Promise(resolve => setTimeout(resolve, 800))
+//   }
+//
+//   // 3. 获取我们要导出的目标 DOM 节点
+//   const element = document.querySelector('.split-text-pane')
+//   if (!element) {
+//     alert("Report container not found.")
+//     isExporting.value = false
+//     return
+//   }
+//
+//   // 4. 动态获取报告标题作为文件名
+//   const fileName = `${store.analysisResults.report.report_title || 'Marine_News_Analysis'}.pdf`
+//
+//   // 5. 配置 html2pdf 参数 (A4 纸张，高清渲染)
+//   const opt = {
+//     margin:       [15, 15, 15, 15], // 上, 左, 下, 右 的边距 (mm)
+//     filename:     fileName,
+//     image:        { type: 'jpeg', quality: 0.98 },
+//     html2canvas:  { scale: 2, useCORS: true }, // scale: 2 保证 ECharts 截图清晰不模糊
+//     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+//   }
+//
+//   // 6. 执行导出
+//   try {
+//     await html2pdf().set(opt).from(element).save()
+//   } catch (error) {
+//     console.error("PDF Export Failed:", error)
+//     alert("Export failed, please check console.")
+//   } finally {
+//     isExporting.value = false
+//   }
+// }
 const exportToPDF = async () => {
-  // 1. 防御性检查：确保报告已经生成
   if (!store.analysisResults?.report) {
     alert("Please generate a report first before exporting.")
     return
   }
 
   isExporting.value = true
+  exportStatus.value = 'Initializing...'
 
-  // 2. 智能视图切换：如果用户没在 Final Report 视图，自动切过去
-  if (activeTab.value !== 'final_report') {
-    activeTab.value = 'final_report'
-    // 等待 Vue 将 DOM 切换过来
-    await nextTick()
-    // 故意等待 800ms，让 ECharts 的入场动画彻底播完，防止截到半截的图表
-    await new Promise(resolve => setTimeout(resolve, 800))
-  }
-
-  // 3. 获取我们要导出的目标 DOM 节点
-  const element = document.querySelector('.split-text-pane')
-  if (!element) {
-    alert("Report container not found.")
-    isExporting.value = false
-    return
-  }
-
-  // 4. 动态获取报告标题作为文件名
-  const fileName = `${store.analysisResults.report.report_title || 'Marine_News_Analysis'}.pdf`
-
-  // 5. 配置 html2pdf 参数 (A4 纸张，高清渲染)
-  const opt = {
-    margin:       [15, 15, 15, 15], // 上, 左, 下, 右 的边距 (mm)
-    filename:     fileName,
-    image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2, useCORS: true }, // scale: 2 保证 ECharts 截图清晰不模糊
-    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  }
-
-  // 6. 执行导出
   try {
-    await html2pdf().set(opt).from(element).save()
+    await exportStructuredReport(
+      store.analysisResults,
+      (msg) => { exportStatus.value = msg }  // 进度回调
+    )
   } catch (error) {
     console.error("PDF Export Failed:", error)
-    alert("Export failed, please check console.")
+    alert("Export failed: " + error.message)
   } finally {
     isExporting.value = false
+    exportStatus.value = ''
   }
 }
 </script>

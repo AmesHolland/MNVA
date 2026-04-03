@@ -403,7 +403,9 @@ const renderChart = async () => {
     label: { show: true, position: 'bottom', color: '#303133', fontWeight: 'bold' }
   }))
 
-  // 【修改 1】：为连线文字加上白色的“胶囊背景”，防止与线条或其他文字重叠
+  // 边标签改为只显示类型缩写
+  const typeAbbr = { 'Conflict': '⚔', 'Cooperation': '🤝', 'Diplomacy': '🏛', 'Trade': '💹', 'Other': '•' }
+
   originalSeriesData = links.map(l => ({
     source: l.source,
     target: l.target,
@@ -412,22 +414,24 @@ const renderChart = async () => {
     active_dates: l.active_dates || [],
     label: {
       show: true,
-      formatter: l.label,
-      fontSize: 11,
-      color: '#555',
-      backgroundColor: 'rgba(255, 255, 255, 0.85)', // 🌟 核心：半透明白色背景
-      padding: [3, 6],                              // 🌟 核心：给文字一点呼吸空间
-      borderRadius: 4,                              // 🌟 核心：圆角变成小胶囊
-      borderWidth: 1,
-      borderColor: relationColorMap[l.type] || '#ebeef5' // 边框颜色和连线颜色一致
+      formatter: '',// typeAbbr[l.type] || '•',  // ✅ 只显示一个emoji图标
+      fontSize: 14,
+      backgroundColor: relationColorMap[l.type] || '#909399',
+      color: '#fff',
+      padding: [2, 5],
+      borderRadius: 10,
+      // ✅ 关键：强制不旋转
+      rotate: 0,
     },
     lineStyle: {
       color: relationColorMap[l.type] || '#909399',
       width: Math.min(Math.max(l.value, 1), 5),
       curveness: 0.2,
-      opacity: 0.7
+      opacity: 0.6
     },
-    tooltip: l.tooltip // 保存原始长文本
+    _rawLabel: l.label,
+    _type: l.type,
+    tooltip: l.tooltip
   }))
 
   option = {

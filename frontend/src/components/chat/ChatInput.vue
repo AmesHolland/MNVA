@@ -114,7 +114,9 @@ const handleKeyDown = (e) => {
   padding: 12px 45px 12px 12px; /* 右侧留出按钮空间 */
   border: 1px solid #e2e8f0; /* 学术冷灰边框 */
   border-radius: 6px;
-  resize: none;
+  resize: vertical; /* ✅ 允许垂直方向拖拽调整大小 */
+  min-height: 60px;  /* 最小高度，防止缩太小 */
+  max-height: 300px; /* 最大高度，防止撑破布局 */
   font-family: inherit;
   font-size: 0.95rem;
   color: #334155;

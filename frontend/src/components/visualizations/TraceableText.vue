@@ -155,11 +155,19 @@ const isClaimDimmed = (claim) => {
 }
 
 /* AI 洞察角标 */
+/* AI 洞察角标 */
 .insight-badge {
   color: #e6a23c;
   background-color: #fdf6ec;
   border: 1px solid #f3d19e;
-  cursor: default; /* 这个不需要点击 */
+  cursor: pointer;
+}
+
+.insight-badge:hover {
+  background-color: #e6a23c;
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(230, 162, 60, 0.3);
 }
 
 .sentence-spacer {

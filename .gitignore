@@ -7,4 +7,5 @@ frontend/.vite
 AGENTS.md
 .gitignore
 tmp
-agent/tools/data_warehouse/
+agent/tools/data_warehouse
+agent/tools/data_warehouse/registry.json

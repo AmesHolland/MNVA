@@ -1,26 +1,46 @@
 <script setup>
 import EchartsCanvas from './EchartsCanvas.vue'
 import VegaLiteChart from './VegaLiteChart.vue'
-// import TraceableText from "./TraceableText.vue";
+import { ref, nextTick, computed } from 'vue'
 
-defineProps({ task: Object ,
-hideMap: Object})
+defineProps({ task: Object, hideMap: Object })
 
-import { ref, nextTick } from 'vue'
-
-// 记录当前关系图是否全屏
+// 全屏
 const isFullscreen = ref(false)
-
 const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value
-
-  // 🌟 核心细节：DOM 更新后，强制触发一次窗口 resize 事件
-  // 这样 EchartsCanvas 内部监听 resize 的机制就会生效，自动将画布撑满全屏
   nextTick(() => {
     window.dispatchEvent(new Event('resize'))
   })
 }
 
+// 右侧详情面板
+const selectedEdge = ref(null)
+
+const relationColorMap = {
+  'Conflict': '#F56C6C',
+  'Cooperation': '#67C23A',
+  'Diplomacy': '#E6A23C',
+  'Trade': '#409EFF',
+  'Other': '#909399'
+}
+
+const parsedEvents = computed(() => {
+  if (!selectedEdge.value?.tooltip) return []
+  return selectedEdge.value.tooltip
+    .split('\n')
+    .filter(Boolean)
+    .map(line => {
+      const match = line.match(/\[(\d{4}-\d{2}-\d{2})\](.+)/)
+      return match
+        ? { date: match[1], text: match[2].trim() }
+        : { date: '', text: line }
+    })
+})
+
+const onEdgeClick = (edgeData) => {
+  selectedEdge.value = edgeData
+}
 </script>
 
 <template>
@@ -60,25 +80,43 @@ const toggleFullscreen = () => {
   </template>
 
   <template v-if="task.agent_name === 'Relation_Miner_Agent'">
-    <div class="chart-box" :class="{ 'is-fullscreen': isFullscreen }">
-
-      <div class="chart-header">
-        <span>Interaction Network Graph</span>
-        <button
-          class="fullscreen-btn"
-          @click="toggleFullscreen"
-          :title="isFullscreen ? 'Exit Fullscreen' : 'Expand to Fullscreen'"
-        >
-          {{ isFullscreen ? '⛌' : '⛶' }}
-        </button>
-      </div>
-
-      <div class="chart-content">
-        <EchartsCanvas :key="isFullscreen" chartType="relation_graph" :chartData="task.visualization_data.graph_chart" />
-      </div>
-
+  <div class="chart-box" :class="{ 'is-fullscreen': isFullscreen }">
+    <div class="chart-header">
+      <span>Interaction Network Graph</span>
+      <button class="fullscreen-btn" @click="toggleFullscreen">
+        {{ isFullscreen ? '⛌' : '⛶' }}
+      </button>
     </div>
-  </template>
+
+    <div class="chart-content">
+      <EchartsCanvas
+        :key="isFullscreen"
+        chartType="relation_graph"
+        :chartData="task.visualization_data.graph_chart"
+        @edge-click="onEdgeClick"
+      />
+
+      <transition name="slide">
+        <div v-if="selectedEdge" class="detail-panel">
+          <div class="panel-header">
+            <span>{{ selectedEdge.source }} → {{ selectedEdge.target }}</span>
+            <button @click="selectedEdge = null">✕</button>
+          </div>
+          <div class="panel-type-badge"
+            :style="{ background: relationColorMap[selectedEdge._type] }">
+            {{ selectedEdge._type }}
+          </div>
+          <div class="event-list">
+            <div v-for="(event, i) in parsedEvents" :key="i" class="event-item">
+              <span class="event-date">{{ event.date }}</span>
+              <span class="event-text">{{ event.text }}</span>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </div>
+  </div>
+</template>
 
 </template>
 
@@ -160,6 +198,49 @@ const toggleFullscreen = () => {
   border-bottom: 1px solid #ebeef5;
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
+<style scoped>
+.detail-panel {
+  width: 300px;
+  border-left: 1px solid #ebeef5;
+  padding: 16px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.panel-type-badge {
+  display: inline-block;
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.event-item {
+  padding: 8px 0;
+  border-bottom: 1px dashed #ebeef5;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.event-date {
+  color: #909399;
+  font-size: 11px;
+  display: block;
+}
+.legend-item {
+  border: 2px solid;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 12px;
+  margin-right: 6px;
+}
+.slide-enter-active, .slide-leave-active { transition: all 0.25s ease; }
+.slide-enter-from, .slide-leave-to { transform: translateX(20px); opacity: 0; }
 </style>
 
 
